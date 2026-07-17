@@ -25,23 +25,12 @@ class GeminiVisualClient:
         return self.gemini_response(image_base64, classes)
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
-        top_classes = classes[:3]
-        candidates = []
-
-        for index, class_name in enumerate(top_classes):
-            mapping = resolve_mapping(class_name)
-            candidates.append(
-                {
-                    "dataset_class_name": mapping.dataset_class_name if mapping else class_name,
-                    "visual_score": max(0.30, round(0.76 - (index * 0.11), 2)),
-                    "reason": "Kandidat visual mock untuk pengujian lokal tanpa memanggil Gemini API.",
-                }
-            )
-
         return {
-            "is_valid_skin_image": True,
-            "candidates": candidates,
-            "warnings": ["AI_MOCK_MODE aktif; hasil visual bukan analisis klinis."],
+            "is_valid_skin_image": False,
+            "candidates": [],
+            "warnings": [
+                "AI_MOCK_MODE aktif; validasi foto kulit tidak dijalankan agar sistem tidak memberi hasil visual palsu."
+            ],
             "raw_response": {"mode": "mock"},
         }
 

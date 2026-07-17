@@ -22,6 +22,11 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'dermacerdas_ai' => [
+        'url' => env('DERMACERDAS_AI_SERVICE_URL'),
+        'timeout' => env('DERMACERDAS_AI_TIMEOUT', 20),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

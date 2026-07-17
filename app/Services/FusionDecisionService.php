@@ -15,7 +15,8 @@ class FusionDecisionService
         array $redFlagResult = [],
         ?float $visualWeight = null,
         ?float $textWeight = null,
-        ?float $threshold = null
+        ?float $threshold = null,
+        bool $hasValidatedVisual = true
     ): array {
         $weights = $this->weights($visualWeight, $textWeight);
         $threshold ??= $this->settingFloat('decision_threshold', 0.6);
@@ -46,7 +47,8 @@ class FusionDecisionService
                 $fusionScore,
                 $threshold,
                 $hasRedFlags,
-                $datasetMapping
+                $datasetMapping,
+                $hasValidatedVisual
             ),
         ];
     }
@@ -112,15 +114,24 @@ class FusionDecisionService
         float $fusionScore,
         float $threshold,
         bool $hasRedFlags,
-        ?DatasetClassMapping $datasetMapping
+        ?DatasetClassMapping $datasetMapping,
+        bool $hasValidatedVisual
     ): string {
-        $base = sprintf(
-            'Kemungkinan awal %s memiliki skor visual %.1f%%, skor gejala %.1f%%, dan skor gabungan %.1f%%.',
-            $disease->name_indonesian ?: $disease->name,
-            $visualScore * 100,
-            $textualCf * 100,
-            $fusionScore * 100
-        );
+        if ($hasValidatedVisual) {
+            $base = sprintf(
+                'Kemungkinan awal %s memiliki skor visual %.1f%%, skor gejala %.1f%%, dan skor gabungan %.1f%%.',
+                $disease->name_indonesian ?: $disease->name,
+                $visualScore * 100,
+                $textualCf * 100,
+                $fusionScore * 100
+            );
+        } else {
+            $base = sprintf(
+                'Kemungkinan awal %s dihitung dari skor gejala %.1f%% karena validasi visual belum tersedia.',
+                $disease->name_indonesian ?: $disease->name,
+                $textualCf * 100
+            );
+        }
 
         if ($hasRedFlags) {
             return $base.' Rekomendasi obat ditolak karena red flags terdeteksi.';

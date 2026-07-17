@@ -342,7 +342,7 @@ class KnowledgeBaseController extends Controller
                 'description' => 'Audit konsultasi pengguna dan hasil final.',
                 'read_only' => true,
                 'with' => ['user'],
-                'columns' => ['session_code', 'user_name', 'status', 'final_score', 'final_action', 'created_at'],
+                'columns' => ['session_code', 'visitor_name', 'user_name', 'status', 'final_score', 'final_action', 'created_at'],
                 'fields' => [],
             ],
         ];

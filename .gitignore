@@ -19,9 +19,16 @@
 /storage/*.key
 /storage/pail
 /vendor
+.agents/
+.codex/
+*.docx
+*.pdf
 .venv/
 __pycache__/
 .pytest_cache/
+aurora-free-1.0.0/
+screwfast-1.0.0/
+backend-laravel/
 Homestead.json
 Homestead.yaml
 Thumbs.db

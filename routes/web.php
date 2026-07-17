@@ -1,23 +1,27 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\KnowledgeBaseController;
-use Illuminate\Foundation\Application;
+use App\Http\Controllers\ContactController;
+use App\Http\Controllers\ConsultationController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
+Route::get('/', fn () => Inertia::render('Public/Home'))->name('home');
+Route::get('/cara-kerja', fn () => Inertia::render('Public/HowItWorks'))->name('how-it-works');
+Route::get('/about', fn () => Inertia::render('Public/About'))->name('about');
+Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
+Route::get('/konsultasi', [ConsultationController::class, 'create'])->name('consultation.start');
+Route::get('/riwayat', [ConsultationController::class, 'history'])->name('consultation.history');
+Route::post('/riwayat', [ConsultationController::class, 'checkHistory'])->name('consultation.history.check');
+Route::post('/consultations', [ConsultationController::class, 'store'])->name('consultation.store');
+Route::get('/consultations/{sessionCode}/result', [ConsultationController::class, 'result'])->name('consultation.result');
+Route::get('/consultations/{sessionCode}/export', [ConsultationController::class, 'export'])->name('consultation.export');
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', DashboardController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

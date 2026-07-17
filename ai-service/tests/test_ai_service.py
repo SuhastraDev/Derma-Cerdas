@@ -48,7 +48,7 @@ def test_validate_image_rejects_invalid_base64() -> None:
     assert payload["warnings"]
 
 
-def test_analyze_image_returns_mapped_candidates_in_mock_mode() -> None:
+def test_analyze_image_mock_mode_does_not_claim_valid_skin_image() -> None:
     response = client.post(
         "/analyze-image",
         json={
@@ -61,10 +61,9 @@ def test_analyze_image_returns_mapped_candidates_in_mock_mode() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider"] == "gemini"
-    assert payload["is_valid_skin_image"] is True
-    assert payload["candidates"][0]["dataset_class_name"] == "Tinea_Corporis"
-    assert payload["candidates"][0]["local_disease_code"] == "TINEA_CORPORIS"
-    assert 0 <= payload["candidates"][0]["visual_score"] <= 1
+    assert payload["is_valid_skin_image"] is False
+    assert payload["candidates"] == []
+    assert payload["warnings"]
 
 
 def test_normalize_candidates_discards_unknown_dataset_classes() -> None:
