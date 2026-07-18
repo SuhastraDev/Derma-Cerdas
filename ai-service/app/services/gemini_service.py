@@ -45,10 +45,18 @@ class GeminiVisualClient:
         client = genai.Client(api_key=settings.gemini_api_key)
         prompt = self.prompt(classes)
 
-        response = client.models.generate_content(
-            model=settings.gemini_model_name,
-            contents=[prompt, image],
-        )
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model_name,
+                contents=[prompt, image],
+            )
+        except Exception as exc:
+            return {
+                "is_valid_skin_image": False,
+                "candidates": [],
+                "warnings": [f"Gemini API gagal: {exc}"],
+                "raw_response": {"error": str(exc), "model": settings.gemini_model_name},
+            }
 
         text = getattr(response, "text", "") or ""
         parsed = self.parse_json_text(text)

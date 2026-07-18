@@ -1,12 +1,16 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router, useForm } from '@inertiajs/react';
 import {
+    ExternalLink,
+    Eye,
+    FileText,
     Pencil,
     Plus,
     Search,
     Trash2,
+    X,
 } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useMemo, useState } from 'react';
 
 type Field = {
     name: string;
@@ -24,6 +28,35 @@ type OptionItem = {
 type Options = Record<string, Array<OptionItem> | string[]>;
 type ItemValue = string | number | boolean | null | object | undefined;
 type Item = Record<string, ItemValue>;
+type Recommendation = {
+    medicine_name?: string;
+    category?: string;
+    dosage_form?: string;
+    usage_instruction?: string;
+    warnings?: string;
+    recommendation_note?: string;
+};
+type ConsultationDetail = {
+    complaint_text?: string | null;
+    complaint_summary?: string[];
+    final_result?: {
+        disease_name?: string;
+        textual_cf?: number;
+        visual_score?: number;
+        fusion_score?: number;
+        action?: string;
+        explanation?: string;
+        recommendations?: Recommendation[];
+    } | null;
+    symptoms?: Array<{ name?: string; question?: string; user_cf?: number }>;
+    red_flags?: Array<{ question?: string; severity?: string }>;
+    visual_results?: Array<{
+        disease_name?: string;
+        visual_score?: number;
+        visual_reason?: string;
+        provider?: string;
+    }>;
+};
 
 type ResourceIndexProps = {
     resource: string;
@@ -130,6 +163,10 @@ function valueBadge(value: ItemValue) {
     return <span>{text}</span>;
 }
 
+function percent(value?: number): string {
+    return `${Math.round((value ?? 0) * 100)}%`;
+}
+
 export default function ResourceIndex({
     resource,
     title,
@@ -142,6 +179,7 @@ export default function ResourceIndex({
 }: ResourceIndexProps) {
     const initialData = useMemo(() => emptyData(fields), [fields]);
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [selectedItem, setSelectedItem] = useState<Item | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const { data, setData, post, put, processing, errors, reset } =
         useForm<FormData>(initialData);
@@ -207,6 +245,9 @@ export default function ResourceIndex({
             preserveScroll: true,
         });
     };
+
+    const selectedDetail = selectedItem?.detail as ConsultationDetail | undefined;
+    const showReadOnlyActions = readOnly && resource === 'consultations';
 
     return (
         <AdminLayout
@@ -420,7 +461,7 @@ export default function ResourceIndex({
                                                 {labelize(column)}
                                             </th>
                                         ))}
-                                        {!readOnly && (
+                                        {(showReadOnlyActions || !readOnly) && (
                                             <th className="whitespace-nowrap px-5 py-4 text-right text-xs font-bold uppercase tracking-wide text-[#4d595e]">
                                                 Aksi
                                             </th>
@@ -431,7 +472,7 @@ export default function ResourceIndex({
                                     {filteredItems.length === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={columns.length + (readOnly ? 0 : 1)}
+                                                colSpan={columns.length + (showReadOnlyActions || !readOnly ? 1 : 0)}
                                                 className="px-5 py-10 text-center text-[#77878f]"
                                             >
                                                 Data tidak ditemukan. Coba kata kunci lain.
@@ -453,6 +494,18 @@ export default function ResourceIndex({
                                                         </div>
                                                     </td>
                                                 ))}
+                                                {showReadOnlyActions && (
+                                                    <td className="whitespace-nowrap px-5 py-4 text-right">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedItem(item)}
+                                                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
+                                                        >
+                                                            <Eye className="h-4 w-4" />
+                                                            Detail
+                                                        </button>
+                                                    </td>
+                                                )}
                                                 {!readOnly && (
                                                     <td className="whitespace-nowrap px-5 py-4 text-right">
                                                         <button
@@ -481,6 +534,220 @@ export default function ResourceIndex({
                         </div>
                     </div>
             </section>
+
+            {selectedItem && selectedDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
+                    <section className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-wide text-[#3385f0]">
+                                    Detail konsultasi
+                                </p>
+                                <h2 className="mt-1 text-xl font-bold text-[#1b2124]">
+                                    {displayValue(selectedItem.visitor_name)}
+                                </h2>
+                                <p className="mt-1 text-sm text-[#77878f]">
+                                    {displayValue(selectedItem.session_code)}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedItem(null)}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#dbe6eb] bg-white text-[#4d595e] transition hover:bg-[#ebf2f5]"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[calc(92vh-88px)] overflow-y-auto p-5">
+                            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.4fr]">
+                                <div className="space-y-4">
+                                    <div className="rounded-lg border border-[#dbe6eb] bg-white p-3">
+                                        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                            Foto user
+                                        </p>
+                                        {selectedItem.uploaded_image_url ? (
+                                            <img
+                                                src={String(selectedItem.uploaded_image_url)}
+                                                alt="Foto konsultasi user"
+                                                className="h-72 w-full rounded-md object-cover"
+                                            />
+                                        ) : (
+                                            <div className="flex h-72 items-center justify-center rounded-md bg-[#ebf2f5] text-sm text-[#77878f]">
+                                                Foto tidak tersedia
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                                        <ScoreCard label="Visual" value={percent(selectedDetail.final_result?.visual_score)} />
+                                        <ScoreCard label="Gejala CF" value={percent(selectedDetail.final_result?.textual_cf)} />
+                                        <ScoreCard label="Fusion" value={percent(selectedDetail.final_result?.fusion_score)} strong />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="rounded-lg border border-[#dbe6eb] bg-[#f7fafc] p-5">
+                                        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                                            <div>
+                                                <p className="text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                                    Hasil final
+                                                </p>
+                                                <h3 className="mt-1 text-2xl font-bold text-[#1b2124]">
+                                                    {selectedDetail.final_result?.disease_name ?? '-'}
+                                                </h3>
+                                            </div>
+                                            {valueBadge(selectedDetail.final_result?.action)}
+                                        </div>
+                                        <p className="mt-3 text-sm leading-6 text-[#4d595e]">
+                                            {selectedDetail.final_result?.explanation ?? 'Belum ada penjelasan hasil.'}
+                                        </p>
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                            <a
+                                                href={String(selectedItem.result_url)}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#3385f0] px-4 text-sm font-bold text-white transition hover:bg-[#2b71cc]"
+                                            >
+                                                <ExternalLink className="h-4 w-4" />
+                                                Buka hasil user
+                                            </a>
+                                            <a
+                                                href={String(selectedItem.export_url)}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6eb] bg-white px-4 text-sm font-bold text-[#4d595e] transition hover:bg-[#ebf2f5]"
+                                            >
+                                                <FileText className="h-4 w-4" />
+                                                Export PDF
+                                            </a>
+                                        </div>
+                                    </div>
+
+                                    <DetailSection title="Rekomendasi obat">
+                                        {(selectedDetail.final_result?.recommendations ?? []).length > 0 ? (
+                                            <div className="grid gap-3">
+                                                {selectedDetail.final_result?.recommendations?.map((item, index) => (
+                                                    <div key={`${item.medicine_name}-${index}`} className="rounded-lg border border-[#dbe6eb] bg-white p-4">
+                                                        <p className="font-bold text-[#1b2124]">{item.medicine_name}</p>
+                                                        <p className="mt-1 text-sm text-[#77878f]">
+                                                            {[item.category, item.dosage_form].filter(Boolean).join(' / ') || '-'}
+                                                        </p>
+                                                        <p className="mt-2 text-sm leading-6 text-[#4d595e]">
+                                                            {item.usage_instruction || item.recommendation_note || '-'}
+                                                        </p>
+                                                        {item.warnings && (
+                                                            <p className="mt-2 rounded-lg bg-[#feefe1] px-3 py-2 text-sm leading-6 text-[#9a4f16]">
+                                                                {item.warnings}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <EmptyNote text="Tidak ada rekomendasi obat pada konsultasi ini. Biasanya karena skor belum cukup, ada red flag, atau mapping penyakit hanya edukasi/rujukan." />
+                                        )}
+                                    </DetailSection>
+
+                                    <DetailSection title="Keluhan user">
+                                        <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
+                                            {selectedDetail.complaint_text || 'Keluhan tidak tersedia.'}
+                                        </p>
+                                        {(selectedDetail.complaint_summary ?? []).length > 0 && (
+                                            <div className="mt-3 grid gap-2">
+                                                {selectedDetail.complaint_summary?.map((item) => (
+                                                    <div key={item} className="rounded-lg border border-[#bfe5d8] bg-[#e6f5f0] p-3 text-sm leading-6 text-[#0b6545]">
+                                                        {item}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </DetailSection>
+
+                                    <DetailSection title="Gejala dipilih">
+                                        {(selectedDetail.symptoms ?? []).length > 0 ? (
+                                            <div className="grid gap-2">
+                                                {selectedDetail.symptoms?.map((item, index) => (
+                                                    <div key={`${item.name}-${index}`} className="rounded-lg border border-[#dbe6eb] bg-white p-3">
+                                                        <div className="flex justify-between gap-3">
+                                                            <p className="font-semibold text-[#1b2124]">{item.name}</p>
+                                                            <span className="text-sm font-bold text-[#088759]">{percent(item.user_cf)}</span>
+                                                        </div>
+                                                        <p className="mt-1 text-sm leading-6 text-[#77878f]">{item.question}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <EmptyNote text="Tidak ada gejala bernilai positif." />
+                                        )}
+                                    </DetailSection>
+
+                                    <DetailSection title="Red flag">
+                                        {(selectedDetail.red_flags ?? []).length > 0 ? (
+                                            <div className="grid gap-2">
+                                                {selectedDetail.red_flags?.map((item, index) => (
+                                                    <div key={`${item.question}-${index}`} className="rounded-lg border border-[#f5c3cc] bg-[#fff5f6] p-3 text-sm text-[#8c182b]">
+                                                        <strong>{item.severity}</strong>: {item.question}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <EmptyNote text="Tidak ada red flag terdeteksi." />
+                                        )}
+                                    </DetailSection>
+
+                                    <DetailSection title="Kandidat visual AI">
+                                        {(selectedDetail.visual_results ?? []).length > 0 ? (
+                                            <div className="grid gap-2">
+                                                {selectedDetail.visual_results?.map((item, index) => (
+                                                    <div key={`${item.disease_name}-${index}`} className="rounded-lg border border-[#dbe6eb] bg-white p-3">
+                                                        <div className="flex justify-between gap-3">
+                                                            <p className="font-semibold text-[#1b2124]">{item.disease_name}</p>
+                                                            <span className="text-sm font-bold text-[#3385f0]">{percent(item.visual_score)}</span>
+                                                        </div>
+                                                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[#77878f]">
+                                                            {item.provider}
+                                                        </p>
+                                                        <p className="mt-2 text-sm leading-6 text-[#4d595e]">{item.visual_reason}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <EmptyNote text="Belum ada kandidat visual tersimpan." />
+                                        )}
+                                    </DetailSection>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
         </AdminLayout>
+    );
+}
+
+function ScoreCard({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+    return (
+        <div className={`rounded-lg border p-4 ${strong ? 'border-[#bfe5d8] bg-[#e6f5f0]' : 'border-[#dbe6eb] bg-[#f7fafc]'}`}>
+            <p className="text-xs font-bold uppercase tracking-wide text-[#77878f]">{label}</p>
+            <p className={`mt-1 text-2xl font-bold ${strong ? 'text-[#088759]' : 'text-[#1b2124]'}`}>{value}</p>
+        </div>
+    );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+    return (
+        <section className="rounded-lg border border-[#dbe6eb] bg-[#f7fafc] p-4">
+            <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-[#4d595e]">{title}</h3>
+            {children}
+        </section>
+    );
+}
+
+function EmptyNote({ text }: { text: string }) {
+    return (
+        <p className="rounded-lg border border-dashed border-[#c3d3db] bg-white px-4 py-3 text-sm leading-6 text-[#77878f]">
+            {text}
+        </p>
     );
 }

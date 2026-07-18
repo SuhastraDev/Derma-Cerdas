@@ -36,12 +36,29 @@ body {
     animation: page-enter 320ms ease-out both;
 }
 
+@keyframes consultation-card-enter {
+    from {
+        opacity: 0;
+        transform: translateX(18px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+}
+
+.consultation-card-enter {
+    animation: consultation-card-enter 260ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
     }
 
-    .page-transition {
+    .page-transition,
+    .consultation-card-enter {
         animation: none;
     }
 }

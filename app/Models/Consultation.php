@@ -11,6 +11,8 @@ class Consultation extends Model
     protected $fillable = [
         'user_id',
         'visitor_name',
+        'complaint_text',
+        'complaint_features',
         'session_code',
         'image_path',
         'status',
@@ -22,6 +24,7 @@ class Consultation extends Model
     protected $casts = [
         'final_score' => 'decimal:2',
         'metadata' => 'array',
+        'complaint_features' => 'array',
     ];
 
     public function user(): BelongsTo

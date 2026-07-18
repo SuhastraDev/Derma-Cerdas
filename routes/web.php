@@ -16,8 +16,10 @@ Route::get('/konsultasi', [ConsultationController::class, 'create'])->name('cons
 Route::get('/riwayat', [ConsultationController::class, 'history'])->name('consultation.history');
 Route::post('/riwayat', [ConsultationController::class, 'checkHistory'])->name('consultation.history.check');
 Route::post('/consultations', [ConsultationController::class, 'store'])->name('consultation.store');
+Route::post('/consultations/precheck', [ConsultationController::class, 'precheck'])->name('consultation.precheck');
 Route::get('/consultations/{sessionCode}/result', [ConsultationController::class, 'result'])->name('consultation.result');
 Route::get('/consultations/{sessionCode}/export', [ConsultationController::class, 'export'])->name('consultation.export');
+Route::get('/dataset-examples/{className}/{fileName}', [ConsultationController::class, 'datasetExampleImage'])->name('dataset.example-image');
 
 Route::get('/dashboard', DashboardController::class)
     ->middleware(['auth', 'verified'])

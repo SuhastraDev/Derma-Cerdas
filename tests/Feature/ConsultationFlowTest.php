@@ -41,6 +41,7 @@ class ConsultationFlowTest extends TestCase
 
         $payload = [
             'visitor_name' => 'Indra Suhastra',
+            'complaint_text' => 'Gatal sejak satu minggu, ruam melingkar di badan dan tepinya bersisik. Tidak demam dan tidak bernanah.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
@@ -59,6 +60,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertSame('completed', $consultation->refresh()->status);
         $this->assertSame('Indra Suhastra', $consultation->visitor_name);
+        $this->assertNotEmpty($consultation->complaint_features['symptom_evidence']['RING_SHAPED_EDGE'] ?? []);
         $this->assertSame('recommend_otc', $consultation->final_action);
         $this->assertDatabaseCount('consultation_symptoms', Symptom::query()->count());
         $this->assertDatabaseCount('consultation_red_flags', RedFlag::query()->count());
@@ -74,6 +76,27 @@ class ConsultationFlowTest extends TestCase
             ->assertOk();
     }
 
+    public function test_precheck_returns_adaptive_symptom_questions(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $this->mockValidVisualAnalysis('TINEA_CORPORIS');
+
+        $response = $this->postJson(route('consultation.precheck'), [
+            'complaint_text' => 'Gatal sejak satu minggu, ruam melingkar di badan, tepinya merah dan bersisik. Tidak demam.',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('visual.status', 'valid');
+
+        $codes = collect($response->json('selected_symptoms'))->pluck('code');
+
+        $this->assertLessThan(Symptom::query()->count(), $codes->count());
+        $this->assertGreaterThanOrEqual(5, $codes->count());
+        $this->assertContains('RING_SHAPED_EDGE', $codes);
+    }
+
     public function test_red_flag_forces_refer_action(): void
     {
         Storage::fake('public');
@@ -82,6 +105,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->post(route('consultation.store'), [
             'visitor_name' => 'Pengguna Red Flag',
+            'complaint_text' => 'Bentol gatal muncul hilang timbul disertai bibir bengkak dan sesak.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
@@ -123,6 +147,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->post(route('consultation.store'), [
             'visitor_name' => 'Foto Tidak Valid',
+            'complaint_text' => 'Gatal dan merah ringan sejak beberapa hari tanpa demam.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('random.png', 320, 320),
             'symptoms' => $this->symptoms([
@@ -143,6 +168,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->post(route('consultation.store'), [
             'visitor_name' => 'AI Belum Aktif',
+            'complaint_text' => 'Gatal dan merah ringan sejak beberapa hari tanpa demam.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
@@ -164,6 +190,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->post(route('consultation.store'), [
             'visitor_name' => 'Riwayat User',
+            'complaint_text' => 'Gatal sejak beberapa hari dengan ruam melingkar dan tepi merah.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([

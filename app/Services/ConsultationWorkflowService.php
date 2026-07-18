@@ -23,19 +23,23 @@ class ConsultationWorkflowService
         private readonly RedFlagService $redFlagService,
         private readonly FusionDecisionService $fusionDecisionService,
         private readonly AiVisualService $aiVisualService,
+        private readonly ComplaintExtractionService $complaintExtractionService,
     ) {}
 
     /**
      * @param  array<int|string, float|int|string>  $symptomInputs
      * @param  array<int|string, bool|int|string>  $redFlagInputs
      */
-    public function process(string $visitorName, UploadedFile $image, array $symptomInputs, array $redFlagInputs): Consultation
+    public function process(string $visitorName, ?string $complaintText, UploadedFile $image, array $symptomInputs, array $redFlagInputs): Consultation
     {
-        return DB::transaction(function () use ($visitorName, $image, $symptomInputs, $redFlagInputs): Consultation {
+        return DB::transaction(function () use ($visitorName, $complaintText, $image, $symptomInputs, $redFlagInputs): Consultation {
+            $complaintFeatures = $this->complaintExtractionService->extract($complaintText);
             $imagePath = $image->store('consultations', 'public');
             $consultation = Consultation::query()->create([
                 'user_id' => auth()->id(),
                 'visitor_name' => $visitorName,
+                'complaint_text' => $complaintText,
+                'complaint_features' => $complaintFeatures,
                 'session_code' => $this->sessionCode(),
                 'image_path' => $imagePath,
                 'status' => 'processing',
@@ -45,8 +49,14 @@ class ConsultationWorkflowService
                 ],
             ]);
 
-            $normalizedSymptoms = $this->normalizeSymptomInputs($symptomInputs);
-            $normalizedRedFlags = $this->normalizeRedFlagInputs($redFlagInputs);
+            $normalizedSymptoms = $this->applyComplaintSymptomEvidence(
+                $this->normalizeSymptomInputs($symptomInputs),
+                $complaintFeatures
+            );
+            $normalizedRedFlags = $this->applyComplaintRedFlagEvidence(
+                $this->normalizeRedFlagInputs($redFlagInputs),
+                $complaintFeatures
+            );
 
             $this->storeSymptoms($consultation, $normalizedSymptoms);
             $redFlagResult = $this->redFlagService->evaluate($normalizedRedFlags);
@@ -83,6 +93,7 @@ class ConsultationWorkflowService
                     'red_flag_summary' => $redFlagResult,
                     'textual_top_count' => count($textualRankings),
                     'visual_candidate_count' => count($visualCandidates),
+                    'complaint_summary' => $complaintFeatures['summary'] ?? [],
                     'visual_validation' => [
                         'provider' => $visualAnalysis['provider'],
                         'status' => $visualAnalysis['validation_status'],
@@ -166,6 +177,42 @@ class ConsultationWorkflowService
 
     /**
      * @param  array<string, float>  $symptoms
+     * @param  array<string, mixed>  $complaintFeatures
+     * @return array<string, float>
+     */
+    private function applyComplaintSymptomEvidence(array $symptoms, array $complaintFeatures): array
+    {
+        foreach (($complaintFeatures['symptom_evidence'] ?? []) as $code => $evidence) {
+            if (! array_key_exists($code, $symptoms)) {
+                continue;
+            }
+
+            $symptoms[$code] = max((float) $symptoms[$code], (float) ($evidence['score'] ?? 0.0));
+        }
+
+        return $symptoms;
+    }
+
+    /**
+     * @param  array<string, bool>  $redFlags
+     * @param  array<string, mixed>  $complaintFeatures
+     * @return array<string, bool>
+     */
+    private function applyComplaintRedFlagEvidence(array $redFlags, array $complaintFeatures): array
+    {
+        foreach (($complaintFeatures['red_flag_evidence'] ?? []) as $code => $evidence) {
+            if (! array_key_exists($code, $redFlags)) {
+                continue;
+            }
+
+            $redFlags[$code] = (bool) $redFlags[$code] || (bool) ($evidence['detected'] ?? false);
+        }
+
+        return $redFlags;
+    }
+
+    /**
+     * @param  array<string, float>  $symptoms
      */
     private function storeSymptoms(Consultation $consultation, array $symptoms): void
     {
@@ -235,28 +282,45 @@ class ConsultationWorkflowService
         array $redFlagResult,
         bool $hasValidatedVisual
     ): ConsultationFinalResult {
-        $topTextual = $textualRankings[0] ?? null;
-
-        if (! $topTextual) {
+        if (! $textualRankings && ! $visualCandidates) {
             /** @var Disease $fallbackDisease */
             $fallbackDisease = Disease::query()->where('is_active', true)->firstOrFail();
-            $topTextual = ['disease' => $fallbackDisease, 'textual_cf' => 0.0];
+            $textualRankings = [['disease' => $fallbackDisease, 'textual_cf' => 0.0]];
         }
 
-        /** @var Disease $disease */
-        $disease = $topTextual['disease'];
-        $visualCandidate = collect($visualCandidates)
-            ->first(fn (array $candidate): bool => $candidate['disease']->is($disease));
+        $candidateDiseases = collect($textualRankings)
+            ->pluck('disease')
+            ->merge(collect($visualCandidates)->pluck('disease'))
+            ->filter()
+            ->unique(fn (Disease $disease): int => $disease->id)
+            ->values();
 
-        $decision = $this->fusionDecisionService->decide(
-            disease: $disease->loadMissing('datasetMappings'),
-            visualScore: (float) ($visualCandidate['visual_score'] ?? 0.0),
-            textualCf: (float) $topTextual['textual_cf'],
-            redFlagResult: $redFlagResult,
-            visualWeight: $hasValidatedVisual ? null : 0.0,
-            textWeight: $hasValidatedVisual ? null : 1.0,
-            hasValidatedVisual: $hasValidatedVisual,
-        );
+        $decisions = $candidateDiseases
+            ->map(function (Disease $candidateDisease) use ($textualRankings, $visualCandidates, $redFlagResult, $hasValidatedVisual): array {
+                $textualCandidate = collect($textualRankings)
+                    ->first(fn (array $ranking): bool => $ranking['disease']->is($candidateDisease));
+                $visualCandidate = collect($visualCandidates)
+                    ->first(fn (array $candidate): bool => $candidate['disease']->is($candidateDisease));
+
+                return [
+                    'disease' => $candidateDisease,
+                    'decision' => $this->fusionDecisionService->decide(
+                        disease: $candidateDisease->loadMissing('datasetMappings'),
+                        visualScore: (float) ($visualCandidate['visual_score'] ?? 0.0),
+                        textualCf: (float) ($textualCandidate['textual_cf'] ?? 0.0),
+                        redFlagResult: $redFlagResult,
+                        visualWeight: $hasValidatedVisual ? null : 0.0,
+                        textWeight: $hasValidatedVisual ? null : 1.0,
+                        hasValidatedVisual: $hasValidatedVisual,
+                    ),
+                ];
+            })
+            ->sortByDesc(fn (array $item): float => (float) $item['decision']['fusion_score'])
+            ->values();
+
+        /** @var Disease $disease */
+        $disease = $decisions->first()['disease'];
+        $decision = $decisions->first()['decision'];
 
         return ConsultationFinalResult::query()->create([
             'consultation_id' => $consultation->id,

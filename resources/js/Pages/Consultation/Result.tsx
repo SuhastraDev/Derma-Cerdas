@@ -15,7 +15,12 @@ import {
 type Consultation = {
     session_code: string;
     visitor_name: string | null;
+    complaint_text: string | null;
+    complaint_features: {
+        summary?: string[];
+    } | null;
     image_path: string | null;
+    uploaded_image_url: string | null;
     status: string;
     final_score: string | number | null;
     final_action: string | null;
@@ -66,12 +71,19 @@ type VisualResult = {
     provider: string;
 };
 
+type ComparisonImage = {
+    class_name: string;
+    file_name: string;
+    url: string;
+};
+
 type ResultProps = {
     consultation: Consultation;
     finalResult: FinalResult;
     redFlags: RedFlag[];
     symptoms: Symptom[];
     visualResults: VisualResult[];
+    comparisonImages: ComparisonImage[];
 };
 
 function percent(value: number): string {
@@ -165,6 +177,7 @@ export default function Result({
     redFlags,
     symptoms,
     visualResults,
+    comparisonImages,
 }: ResultProps) {
     const action = actionCopy(finalResult?.action ?? consultation.final_action);
     const ActionIcon = action.Icon;
@@ -241,6 +254,121 @@ export default function Result({
                             <p className="mt-2 max-w-4xl text-sm leading-6">
                                 {action.body}
                             </p>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                        <div>
+                            <p className="text-sm font-semibold text-orange-600">
+                                Bukti visual
+                            </p>
+                            <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                                Foto pengguna dan contoh dataset serupa
+                            </h2>
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                                Bagian ini membantu membedakan foto yang kamu kirim dengan contoh gambar dari dataset SD-198 pada class hasil utama. Contoh dataset bersifat pembanding visual, bukan diagnosis pasti.
+                            </p>
+                        </div>
+                        <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                            Class: {comparisonImages[0]?.class_name ?? diseaseName}
+                        </span>
+                    </div>
+
+                    <div className="mt-5 grid gap-5 lg:grid-cols-[0.95fr_1.25fr]">
+                        <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-orange-900">
+                                    Foto yang dikirim
+                                </p>
+                                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-orange-700 shadow-sm">
+                                    Input user
+                                </span>
+                            </div>
+                            {consultation.uploaded_image_url ? (
+                                <img
+                                    src={consultation.uploaded_image_url}
+                                    alt="Foto area kulit yang dikirim pengguna"
+                                    className="mt-3 h-80 w-full rounded-xl border border-orange-100 bg-white object-cover"
+                                />
+                            ) : (
+                                <div className="mt-3 flex h-80 items-center justify-center rounded-xl border border-dashed border-orange-200 bg-white text-sm text-slate-500">
+                                    Foto tidak tersedia.
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-emerald-950">
+                                    Contoh dari dataset SD-198
+                                </p>
+                                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm">
+                                    Data pembanding
+                                </span>
+                            </div>
+                            {comparisonImages.length > 0 ? (
+                                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                    {comparisonImages.map((image, index) => (
+                                        <figure key={`${image.class_name}-${image.file_name}`} className="rounded-xl border border-emerald-100 bg-white p-2">
+                                            <img
+                                                src={image.url}
+                                                alt={`Contoh dataset ${image.class_name} ${index + 1}`}
+                                                className="aspect-[4/3] w-full rounded-lg object-cover"
+                                            />
+                                            <figcaption className="mt-2 break-words text-xs leading-5 text-slate-600">
+                                                {image.class_name}
+                                                <br />
+                                                <span className="font-mono text-[11px] text-slate-400">
+                                                    {image.file_name}
+                                                </span>
+                                            </figcaption>
+                                        </figure>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="mt-3 flex h-80 items-center justify-center rounded-xl border border-dashed border-emerald-200 bg-white px-4 text-center text-sm leading-6 text-slate-500">
+                                    Contoh dataset untuk hasil ini belum ditemukan di folder lokal `datasets/sd-198`.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[1fr_1fr]">
+                        <div>
+                            <p className="text-sm font-semibold text-orange-600">
+                                Keluhan user
+                            </p>
+                            <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                                Cerita keluhan ikut dipakai sebagai evidence
+                            </h2>
+                            <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                                {consultation.complaint_text || 'Keluhan tidak tersedia.'}
+                            </p>
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-orange-600">
+                                Evidence dari teks
+                            </p>
+                            <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                                Kata kunci yang terbaca sistem
+                            </h2>
+                            {(consultation.complaint_features?.summary ?? []).length > 0 ? (
+                                <ul className="mt-3 space-y-2">
+                                    {consultation.complaint_features?.summary?.map((item) => (
+                                        <li key={item} className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-950">
+                                            {item}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                                    Sistem tidak menemukan kata kunci spesifik dari keluhan bebas.
+                                </p>
+                            )}
                         </div>
                     </div>
                 </section>

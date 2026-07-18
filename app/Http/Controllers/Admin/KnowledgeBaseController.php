@@ -186,13 +186,66 @@ class KnowledgeBaseController extends Controller
         if ($item instanceof Consultation) {
             $data['user_name'] = $item->user?->name;
             $data['final_score'] = $item->final_score;
+            $finalResult = $item->finalResults->sortByDesc('fusion_score')->first();
+
+            $data['uploaded_image_url'] = $item->image_path ? '/storage/'.$item->image_path : null;
+            $data['result_url'] = route('consultation.result', $item->session_code);
+            $data['export_url'] = route('consultation.export', $item->session_code);
+            $data['detail'] = [
+                'complaint_text' => $item->complaint_text,
+                'complaint_summary' => $item->complaint_features['summary'] ?? [],
+                'final_result' => $finalResult ? [
+                    'disease_name' => $finalResult->disease?->name_indonesian ?: $finalResult->disease?->name,
+                    'textual_cf' => (float) $finalResult->textual_cf,
+                    'visual_score' => (float) $finalResult->visual_score,
+                    'fusion_score' => (float) $finalResult->fusion_score,
+                    'action' => $finalResult->action,
+                    'explanation' => $finalResult->explanation,
+                    'recommendations' => $finalResult->recommendations_snapshot ?? [],
+                ] : null,
+                'symptoms' => $item->symptoms
+                    ->filter(fn ($symptom): bool => (bool) $symptom->selected)
+                    ->map(fn ($symptom): array => [
+                        'name' => $symptom->symptom?->name,
+                        'question' => $symptom->symptom?->question,
+                        'user_cf' => (float) $symptom->user_cf,
+                    ])
+                    ->values()
+                    ->all(),
+                'red_flags' => $item->redFlags
+                    ->filter(fn ($redFlag): bool => (bool) $redFlag->detected)
+                    ->map(fn ($redFlag): array => [
+                        'question' => $redFlag->redFlag?->question,
+                        'severity' => $redFlag->redFlag?->severity,
+                    ])
+                    ->values()
+                    ->all(),
+                'visual_results' => $item->visualResults
+                    ->sortByDesc('visual_score')
+                    ->map(fn ($visualResult): array => [
+                        'disease_name' => $visualResult->disease?->name_indonesian ?: $visualResult->disease?->name,
+                        'visual_score' => (float) $visualResult->visual_score,
+                        'visual_reason' => $visualResult->visual_reason,
+                        'provider' => $visualResult->provider,
+                    ])
+                    ->values()
+                    ->all(),
+            ];
         }
 
         $fieldNames = collect($config['fields'])
             ->pluck('name')
             ->all();
 
-        return array_intersect_key($data, array_flip(['id', ...$config['columns'], ...$fieldNames]));
+        return array_intersect_key($data, array_flip([
+            'id',
+            'detail',
+            'uploaded_image_url',
+            'result_url',
+            'export_url',
+            ...$config['columns'],
+            ...$fieldNames,
+        ]));
     }
 
     private function options(): array
@@ -341,7 +394,13 @@ class KnowledgeBaseController extends Controller
                 'title' => 'Riwayat Konsultasi',
                 'description' => 'Audit konsultasi pengguna dan hasil final.',
                 'read_only' => true,
-                'with' => ['user'],
+                'with' => [
+                    'user',
+                    'symptoms.symptom',
+                    'redFlags.redFlag',
+                    'visualResults.disease',
+                    'finalResults.disease',
+                ],
                 'columns' => ['session_code', 'visitor_name', 'user_name', 'status', 'final_score', 'final_action', 'created_at'],
                 'fields' => [],
             ],

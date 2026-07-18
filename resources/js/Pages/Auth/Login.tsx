@@ -3,7 +3,7 @@ import InputError from '@/Components/InputError';
 import { Head, Link, useForm } from '@inertiajs/react';
 import {
     ArrowLeft,
-    Database,
+    CheckCircle2,
     HeartPulse,
     LockKeyhole,
     Mail,
@@ -25,8 +25,8 @@ export default function Login({
         remember: false as boolean,
     });
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
 
         post(route('login'), {
             onFinish: () => reset('password'),
@@ -42,121 +42,114 @@ export default function Login({
     };
 
     return (
-        <main className="min-h-screen bg-neutral-100 text-neutral-950">
+        <main className="min-h-screen bg-[#eef4f2] text-slate-950">
             <Head title="Login Admin" />
 
-            <div className="mx-auto grid min-h-screen max-w-7xl gap-6 px-4 py-5 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
-                <section className="flex min-h-[420px] flex-col justify-between overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 p-6 text-white shadow-sm">
+            <div className="mx-auto grid min-h-screen max-w-7xl gap-5 px-4 py-5 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
+                <section className="relative flex min-h-[460px] flex-col justify-between overflow-hidden rounded-lg bg-neutral-950 p-6 text-white shadow-sm md:p-8">
+                    <div className="absolute inset-x-0 top-0 h-1 bg-orange-400" />
+
                     <div>
                         <Link
-                            href={route('consultation.start')}
+                            href={route('home')}
                             className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white transition hover:bg-white/15"
                         >
                             <ArrowLeft className="h-4 w-4" />
-                            Kembali ke konsultasi
+                            Kembali ke website
                         </Link>
 
-                        <div className="mt-12 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold">
-                            <Sparkles className="h-4 w-4" />
+                        <div className="mt-14 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold">
+                            <Sparkles className="h-4 w-4 text-orange-300" />
                             DermaCerdas Admin
                         </div>
-                        <h1 className="mt-5 max-w-xl text-4xl font-semibold leading-tight">
-                            Ruang kerja untuk menjaga knowledge base tetap aman.
+
+                        <h1 className="mt-5 max-w-xl text-4xl font-semibold leading-tight md:text-5xl">
+                            Panel aman untuk menjaga keputusan sistem tetap terkendali.
                         </h1>
-                        <p className="mt-4 max-w-2xl text-sm leading-6 text-neutral-300">
-                            Login admin digunakan untuk mengelola penyakit, gejala,
-                            rule Certainty Factor, obat, red flags, mapping SD-198,
-                            dan audit konsultasi.
+                        <p className="mt-5 max-w-2xl text-sm leading-7 text-neutral-300">
+                            Gunakan akses admin untuk memelihara gejala, rule Certainty
+                            Factor, red flag, rekomendasi obat, mapping SD-198, dan audit
+                            riwayat konsultasi.
                         </p>
                     </div>
 
                     <div className="mt-10 grid gap-3 sm:grid-cols-3">
                         {[
-                            {
-                                label: 'Rule CF',
-                                text: 'Bobot gejala',
-                                icon: HeartPulse,
-                            },
-                            {
-                                label: 'Dataset',
-                                text: 'Mapping SD-198',
-                                icon: Database,
-                            },
-                            {
-                                label: 'Safety',
-                                text: 'Red flags aktif',
-                                icon: ShieldCheck,
-                            },
-                        ].map((item) => {
-                            const Icon = item.icon;
-
-                            return (
-                                <div
-                                    key={item.label}
-                                    className="rounded-lg border border-white/15 bg-white/10 p-4"
-                                >
-                                    <Icon className="h-5 w-5 text-orange-300" />
-                                    <p className="mt-3 text-sm font-semibold">
-                                        {item.label}
-                                    </p>
-                                    <p className="mt-1 text-xs text-neutral-400">
-                                        {item.text}
-                                    </p>
-                                </div>
-                            );
-                        })}
+                            ['Knowledge base', 'Penyakit, gejala, dan rule CF'],
+                            ['Safety gate', 'Red flag dan batas swamedikasi'],
+                            ['Audit hasil', 'Riwayat konsultasi user'],
+                        ].map(([label, text]) => (
+                            <div
+                                key={label}
+                                className="rounded-lg border border-white/15 bg-white/10 p-4"
+                            >
+                                <CheckCircle2 className="h-5 w-5 text-orange-300" />
+                                <p className="mt-3 text-sm font-semibold">{label}</p>
+                                <p className="mt-1 text-xs leading-5 text-neutral-400">
+                                    {text}
+                                </p>
+                            </div>
+                        ))}
                     </div>
                 </section>
 
                 <section className="flex items-center justify-center">
-                    <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <div className="flex items-start justify-between gap-4">
+                    <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+                        <div className="flex items-start gap-4">
+                            <div className="rounded-lg bg-orange-50 p-3 text-orange-700">
+                                <LockKeyhole className="h-6 w-6" />
+                            </div>
                             <div>
                                 <p className="text-sm font-semibold text-orange-600">
                                     Login admin
                                 </p>
-                                <h2 className="mt-2 text-2xl font-semibold text-slate-950">
+                                <h2 className="mt-1 text-2xl font-semibold text-slate-950">
                                     Masuk ke panel DermaCerdas
                                 </h2>
                                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                                    Gunakan akun admin untuk mengubah knowledge base dan
-                                    mengecek riwayat konsultasi.
+                                    Akses ini khusus admin untuk mengubah data inti sistem.
                                 </p>
                             </div>
-                            <span className="rounded-xl bg-yellow-50 p-3 text-orange-700">
-                                <LockKeyhole className="h-6 w-6" />
-                            </span>
                         </div>
 
-                        <div className="mt-5 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-                            <p className="text-sm font-semibold text-neutral-950">
-                                Akun demo lokal
+                        <div className="mt-6 grid gap-3 rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950 sm:grid-cols-[auto_1fr]">
+                            <ShieldCheck className="h-5 w-5" />
+                            <p className="leading-6">
+                                Pastikan perubahan knowledge base sudah tervalidasi sebelum
+                                digunakan untuk testing user.
                             </p>
-                            <div className="mt-3 grid gap-2 text-sm text-neutral-800 sm:grid-cols-2">
+                        </div>
+
+                        <div className="mt-5 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                                 <div>
-                                    <span className="block text-xs uppercase tracking-wide text-orange-700">
-                                        Email
-                                    </span>
-                                    <code>admin@dermacerdas.local</code>
+                                    <p className="text-sm font-semibold text-neutral-950">
+                                        Akun demo lokal
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-neutral-600">
+                                        Untuk testing internal sebelum akun produksi dibuat.
+                                    </p>
                                 </div>
-                                <div>
-                                    <span className="block text-xs uppercase tracking-wide text-orange-700">
-                                        Password
-                                    </span>
-                                    <code>password</code>
-                                </div>
+                                <button
+                                    type="button"
+                                    onClick={useDemoAccount}
+                                    className="inline-flex min-h-9 items-center justify-center rounded-lg bg-orange-400 px-3 text-sm font-bold text-neutral-50 transition hover:bg-orange-500"
+                                >
+                                    Isi demo
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={useDemoAccount}
-                                className="mt-4 inline-flex min-h-9 items-center justify-center rounded-lg bg-orange-400 px-3 text-sm font-bold text-neutral-50 transition hover:bg-orange-500"
-                            >
-                                Isi akun demo
-                            </button>
+                            <div className="mt-3 grid gap-2 text-sm text-neutral-800 sm:grid-cols-2">
+                                <code className="rounded-md bg-white px-3 py-2">
+                                    admin@dermacerdas.local
+                                </code>
+                                <code className="rounded-md bg-white px-3 py-2">
+                                    password
+                                </code>
+                            </div>
                         </div>
 
                         {status && (
-                            <div className="mt-4 rounded-md bg-yellow-50 p-3 text-sm font-medium text-orange-700">
+                            <div className="mt-4 rounded-lg bg-yellow-50 p-3 text-sm font-medium text-orange-700">
                                 {status}
                             </div>
                         )}
@@ -169,7 +162,7 @@ export default function Login({
                                 >
                                     Email
                                 </label>
-                                <div className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-400">
+                                <div className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-400">
                                     <Mail className="h-4 w-4 text-slate-500" />
                                     <input
                                         id="email"
@@ -180,7 +173,9 @@ export default function Login({
                                         autoComplete="username"
                                         autoFocus
                                         placeholder="admin@dermacerdas.local"
-                                        onChange={(e) => setData('email', e.target.value)}
+                                        onChange={(event) =>
+                                            setData('email', event.target.value)
+                                        }
                                     />
                                 </div>
                                 <InputError message={errors.email} className="mt-2" />
@@ -193,7 +188,7 @@ export default function Login({
                                 >
                                     Password
                                 </label>
-                                <div className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-400">
+                                <div className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 shadow-sm focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-400">
                                     <LockKeyhole className="h-4 w-4 text-slate-500" />
                                     <input
                                         id="password"
@@ -203,8 +198,8 @@ export default function Login({
                                         className="w-full border-0 px-0 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-0"
                                         autoComplete="current-password"
                                         placeholder="Masukkan password"
-                                        onChange={(e) =>
-                                            setData('password', e.target.value)
+                                        onChange={(event) =>
+                                            setData('password', event.target.value)
                                         }
                                     />
                                 </div>
@@ -216,11 +211,8 @@ export default function Login({
                                     <Checkbox
                                         name="remember"
                                         checked={data.remember}
-                                        onChange={(e) =>
-                                            setData(
-                                                'remember',
-                                                (e.target.checked || false) as false,
-                                            )
+                                        onChange={(event) =>
+                                            setData('remember', event.target.checked)
                                         }
                                     />
                                     <span className="ms-2 text-sm text-slate-600">
@@ -231,7 +223,7 @@ export default function Login({
                                 {canResetPassword && (
                                     <Link
                                         href={route('password.request')}
-                                    className="rounded-md text-sm font-medium text-orange-600 hover:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
+                                        className="rounded-md text-sm font-medium text-orange-600 hover:text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
                                     >
                                         Lupa password?
                                     </Link>
@@ -241,8 +233,9 @@ export default function Login({
                             <button
                                 type="submit"
                                 disabled={processing}
-                                className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-orange-400 px-5 text-sm font-bold text-neutral-50 shadow-sm transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-5 text-sm font-bold text-orange-300 shadow-sm transition hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
+                                <HeartPulse className="h-4 w-4" />
                                 {processing ? 'Memeriksa akun...' : 'Masuk admin'}
                             </button>
                         </form>

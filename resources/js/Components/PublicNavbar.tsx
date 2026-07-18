@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Lock, Menu, ShieldCheck, X } from 'lucide-react';
+import { Menu, ShieldCheck, X } from 'lucide-react';
 import { useState } from 'react';
 
 const navItems = [
@@ -55,14 +55,6 @@ export default function PublicNavbar() {
                     </nav>
 
                     <div className="flex items-center gap-2">
-                        <Link
-                            href={route('login')}
-                            aria-label="Masuk admin"
-                            title="Masuk admin"
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-neutral-900 text-orange-300 shadow-sm transition hover:bg-orange-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
-                        >
-                            <Lock className="h-4 w-4" />
-                        </Link>
                         <button
                             type="button"
                             onClick={() => setIsOpen((value) => !value)}
