@@ -4,6 +4,7 @@ import {
     ExternalLink,
     Eye,
     FileText,
+    Image,
     Pencil,
     Plus,
     Search,
@@ -15,9 +16,11 @@ import { FormEvent, ReactNode, useMemo, useState } from 'react';
 type Field = {
     name: string;
     label: string;
-    type?: 'text' | 'textarea' | 'select' | 'checkbox' | 'number';
+    type?: 'text' | 'textarea' | 'select' | 'checkbox' | 'number' | 'file';
     options?: string;
     nullable?: boolean;
+    help?: string;
+    multiple?: boolean;
 };
 
 type OptionItem = {
@@ -41,6 +44,7 @@ type ConsultationDetail = {
     complaint_summary?: string[];
     final_result?: {
         disease_name?: string;
+        dataset?: DatasetDetail | null;
         textual_cf?: number;
         visual_score?: number;
         fusion_score?: number;
@@ -57,6 +61,41 @@ type ConsultationDetail = {
         provider?: string;
     }>;
 };
+type DatasetDetail = {
+    dataset_class_id?: number;
+    dataset_class_name?: string;
+    nama_indonesia?: string | null;
+    scope_category?: string;
+    boleh_rekomendasi_obat?: boolean;
+    default_action?: string;
+    disease_name?: string | null;
+    risk_note?: string | null;
+    sample_images?: Array<{
+        class_name: string;
+        file_name: string;
+        url: string;
+    }>;
+};
+type KnowledgeDetail = {
+    title?: string | null;
+    dataset?: DatasetDetail | null;
+    image_url?: string | null;
+    medicine_image_url?: string | null;
+    disease_name?: string | null;
+    medicine_name?: string | null;
+    description?: string | null;
+    default_action?: string | null;
+    severity_scope?: string | null;
+    category?: string | null;
+    dosage_form?: string | null;
+    usage_instruction?: string | null;
+    warnings?: string | null;
+    source_note?: string | null;
+    recommendation_note?: string | null;
+    priority?: number;
+    is_limited_otc?: boolean;
+    is_active?: boolean;
+};
 
 type ResourceIndexProps = {
     resource: string;
@@ -69,7 +108,7 @@ type ResourceIndexProps = {
     readOnly: boolean;
 };
 
-type FormValue = string | number | boolean | null;
+type FormValue = string | number | boolean | null | File | File[];
 type FormData = Record<string, FormValue>;
 
 function labelize(value: string): string {
@@ -77,6 +116,75 @@ function labelize(value: string): string {
         .replaceAll('_', ' ')
         .replaceAll('-', ' ')
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+const humanLabels: Record<string, string> = {
+    code: 'Kode',
+    name: 'Nama',
+    name_indonesian: 'Nama Indonesia',
+    severity_scope: 'Tingkat Risiko',
+    default_action: 'Arahan Default',
+    is_active: 'Aktif',
+    input_type: 'Jenis Jawaban',
+    is_red_flag_candidate: 'Kandidat Red Flag',
+    disease_name: 'Penyakit',
+    symptom_name: 'Gejala',
+    medicine_name: 'Obat',
+    mb: 'MB',
+    md: 'MD',
+    expert_cf: 'CF Pakar',
+    is_required: 'Wajib',
+    category: 'Kategori',
+    dosage_form: 'Sediaan',
+    is_limited_otc: 'OBT',
+    priority: 'Urutan',
+    question: 'Pertanyaan',
+    severity: 'Arahan',
+    dataset_class_id: 'No. Class',
+    dataset_class_name: 'Class SD-198',
+    dataset_name: 'Dataset',
+    image_url: 'Gambar',
+    nama_indonesia: 'Nama Indonesia',
+    scope_category: 'Kategori',
+    session_code: 'Kode Riwayat',
+    visitor_name: 'Nama User',
+    user_name: 'Akun',
+    status: 'Status',
+    final_score: 'Skor',
+    final_action: 'Arahan',
+    created_at: 'Tanggal',
+    key: 'Key',
+    value: 'Value',
+    group: 'Grup',
+    description: 'Deskripsi',
+};
+
+const optionLabels: Record<string, string> = {
+    recommend_otc: 'Tampilkan rekomendasi obat terbatas',
+    educate_only: 'Edukasi saja',
+    refer: 'Rujuk ke tenaga kesehatan',
+    swamedikasi: 'Swamedikasi ringan',
+    edukasi: 'Edukasi/perawatan umum',
+    rujuk: 'Rujukan',
+    exclude: 'Di luar scope sistem',
+    mild: 'Ringan',
+    moderate: 'Sedang',
+    danger: 'Bahaya',
+    excluded: 'Tidak dipakai',
+    scale: 'Skala tingkat keluhan',
+    boolean: 'Ya/Tidak',
+    choice: 'Pilihan',
+    duration: 'Durasi',
+    completed: 'Selesai',
+    insufficient_confidence: 'Skor belum cukup',
+};
+
+function humanLabel(value: string): string {
+    return humanLabels[value] ?? labelize(value);
+}
+
+function optionLabel(value: string): string {
+    return optionLabels[value] ?? labelize(value);
 }
 
 function displayValue(value: ItemValue): string {
@@ -97,7 +205,8 @@ function displayValue(value: ItemValue): string {
 
 function emptyData(fields: Field[]): FormData {
     return fields.reduce<FormData>((data, field) => {
-        data[field.name] = field.type === 'checkbox' ? false : '';
+        data[field.name] =
+            field.type === 'checkbox' ? false : field.type === 'file' ? [] : '';
         return data;
     }, {});
 }
@@ -131,7 +240,7 @@ function valueBadge(value: ItemValue) {
     ) {
         return (
             <span className="inline-flex rounded-lg bg-[#e6f5f0] px-2 py-1 text-xs font-semibold text-[#088759]">
-                {labelize(text)}
+                {optionLabel(text)}
             </span>
         );
     }
@@ -139,7 +248,7 @@ function valueBadge(value: ItemValue) {
     if (['refer', 'rujuk', 'danger'].includes(normalized)) {
         return (
             <span className="inline-flex rounded-lg bg-[#f9e2e6] px-2 py-1 text-xs font-semibold text-[#b11d37]">
-                {labelize(text)}
+                {optionLabel(text)}
             </span>
         );
     }
@@ -147,7 +256,7 @@ function valueBadge(value: ItemValue) {
     if (['exclude', 'excluded', 'insufficient_confidence'].includes(normalized)) {
         return (
             <span className="inline-flex rounded-lg bg-[#ebf2f5] px-2 py-1 text-xs font-semibold text-[#4d595e]">
-                {labelize(text)}
+                {optionLabel(text)}
             </span>
         );
     }
@@ -155,7 +264,7 @@ function valueBadge(value: ItemValue) {
     if (['edukasi', 'moderate'].includes(normalized)) {
         return (
             <span className="inline-flex rounded-lg bg-[#feefe1] px-2 py-1 text-xs font-semibold text-[#d17824]">
-                {labelize(text)}
+                {optionLabel(text)}
             </span>
         );
     }
@@ -179,7 +288,9 @@ export default function ResourceIndex({
 }: ResourceIndexProps) {
     const initialData = useMemo(() => emptyData(fields), [fields]);
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [isFormOpen, setIsFormOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+    const [datasetImages, setDatasetImages] = useState<File[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const { data, setData, post, put, processing, errors, reset } =
         useForm<FormData>(initialData);
@@ -203,6 +314,7 @@ export default function ResourceIndex({
 
         if (editingId) {
             put(route('admin.resource.update', [resource, editingId]), {
+                forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => cancelEdit(),
             });
@@ -210,9 +322,22 @@ export default function ResourceIndex({
         }
 
         post(route('admin.resource.store', resource), {
+            forceFormData: true,
             preserveScroll: true,
-            onSuccess: () => reset(),
+            onSuccess: () => {
+                setDatasetImages([]);
+                setIsFormOpen(false);
+                reset();
+            },
         });
+    };
+
+    const openCreate = () => {
+        setEditingId(null);
+        setData(initialData);
+        setDatasetImages([]);
+        reset();
+        setIsFormOpen(true);
     };
 
     const edit = (item: Item) => {
@@ -220,6 +345,11 @@ export default function ResourceIndex({
 
         fields.forEach((field) => {
             const value = item[field.name];
+            if (field.type === 'file') {
+                nextData[field.name] = [];
+                return;
+            }
+
             nextData[field.name] =
                 typeof value === 'object' && value !== null
                     ? JSON.stringify(value)
@@ -228,11 +358,15 @@ export default function ResourceIndex({
 
         setEditingId(Number(item.id));
         setData(nextData);
+        setDatasetImages([]);
+        setIsFormOpen(true);
     };
 
     const cancelEdit = () => {
         setEditingId(null);
         setData(initialData);
+        setDatasetImages([]);
+        setIsFormOpen(false);
         reset();
     };
 
@@ -247,7 +381,9 @@ export default function ResourceIndex({
     };
 
     const selectedDetail = selectedItem?.detail as ConsultationDetail | undefined;
-    const showReadOnlyActions = readOnly && resource === 'consultations';
+    const selectedDatasetDetail = selectedItem?.detail as DatasetDetail | undefined;
+    const selectedKnowledgeDetail = selectedItem?.detail as KnowledgeDetail | undefined;
+    const showDetailActions = ['consultations', 'dataset-mappings', 'diseases', 'medicines', 'recommendations'].includes(resource);
 
     return (
         <AdminLayout
@@ -283,66 +419,122 @@ export default function ResourceIndex({
                                 </p>
                             </div>
                         </div>
-                        <label className="w-full max-w-xl">
-                            <span className="text-xs font-bold uppercase tracking-wide text-[#77878f]">
-                                Cari data
-                            </span>
-                            <div className="mt-2 flex min-h-11 items-center gap-2 rounded-lg border border-[#dbe6eb] bg-[#f7fafc] px-3 transition focus-within:border-[#3385f0] focus-within:bg-white">
-                                <Search className="h-4 w-4 text-[#77878f]" />
-                                <input
-                                    value={searchTerm}
-                                    onChange={(event) =>
-                                        setSearchTerm(event.target.value)
-                                    }
-                                    placeholder={`Cari ${title.toLowerCase()}...`}
-                                    className="w-full border-0 bg-transparent px-0 py-2 text-sm text-[#1b2124] placeholder:text-[#9caeb8] focus:ring-0"
-                                />
-                            </div>
-                        </label>
+                        <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
+                            {!readOnly && (
+                                <button
+                                    type="button"
+                                    onClick={openCreate}
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#b7d9ef] bg-[#eaf6ff] px-4 text-sm font-bold text-[#245da8] shadow-sm transition hover:border-[#3385f0] hover:bg-[#3385f0] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#3385f0] focus:ring-offset-2"
+                                >
+                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-white/80 text-[#3385f0] shadow-sm">
+                                        <Plus className="h-4 w-4" />
+                                    </span>
+                                    Tambah {title}
+                                </button>
+                            )}
+                            <label className="w-full">
+                                <span className="text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                    Cari data
+                                </span>
+                                <div className="mt-2 flex min-h-11 items-center gap-2 rounded-lg border border-[#dbe6eb] bg-[#f7fafc] px-3 transition focus-within:border-[#3385f0] focus-within:bg-white">
+                                    <Search className="h-4 w-4 text-[#77878f]" />
+                                    <input
+                                        value={searchTerm}
+                                        onChange={(event) =>
+                                            setSearchTerm(event.target.value)
+                                        }
+                                        placeholder={`Cari ${title.toLowerCase()}...`}
+                                        className="w-full border-0 bg-transparent px-0 py-2 text-sm text-[#1b2124] placeholder:text-[#9caeb8] focus:ring-0"
+                                    />
+                                </div>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
-                    {!readOnly && (
+                    {!readOnly && isFormOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
                         <form
                             onSubmit={submit}
-                            className="rounded-lg border border-[#dbe6eb] bg-white p-5 shadow-sm"
+                            className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-[#c9dce5] bg-white shadow-2xl"
                         >
-                            <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                                <div>
-                                    <h2 className="text-base font-bold text-[#1b2124]">
-                                        {editingId ? 'Edit data' : 'Tambah data'}
-                                    </h2>
-                                    <p className="mt-1 text-sm text-[#77878f]">
-                                        Isi data dengan bahasa yang jelas agar mudah
-                                        diaudit.
-                                    </p>
+                            <div className="flex flex-col gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-start gap-3">
+                                    <span className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#eaf6ff] text-[#3385f0] ring-1 ring-[#b7d9ef]">
+                                        {editingId ? (
+                                            <Pencil className="h-5 w-5" />
+                                        ) : (
+                                            <Plus className="h-5 w-5" />
+                                        )}
+                                    </span>
+                                    <div>
+                                        <p className="text-xs font-bold uppercase tracking-wide text-[#3385f0]">
+                                            {editingId ? 'Perbarui data' : 'Data baru'}
+                                        </p>
+                                        <h2 className="mt-1 text-xl font-bold text-[#1b2124]">
+                                            {editingId ? `Edit ${title}` : `Tambah ${title}`}
+                                        </h2>
+                                        <p className="mt-1 max-w-2xl text-sm leading-6 text-[#77878f]">
+                                            Isi field penting, pilih relasi dataset bila tersedia, lalu simpan agar data admin tetap mudah diaudit.
+                                        </p>
+                                    </div>
                                 </div>
-                                {editingId && (
-                                    <button
-                                        type="button"
-                                        onClick={cancelEdit}
-                                        className="rounded-lg px-3 py-2 text-sm font-semibold text-[#4d595e] transition hover:bg-[#ebf2f5] hover:text-[#1b2124]"
-                                    >
-                                        Batal edit
-                                    </button>
-                                )}
+                                <button
+                                    type="button"
+                                    onClick={cancelEdit}
+                                    aria-label="Tutup form"
+                                    title="Tutup form"
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#dbe6eb] bg-white text-[#4d595e] transition hover:bg-[#ebf2f5] hover:text-[#1b2124]"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
                             </div>
 
+                            <div className="max-h-[calc(92vh-205px)] overflow-y-auto bg-white p-5">
                             <div className="grid gap-4 md:grid-cols-2">
                                 {fields.map((field) => (
                                     <label
                                         key={field.name}
-                                        className={
-                                            field.type === 'textarea'
+                                        className={`rounded-lg border border-[#dbe6eb] bg-white p-4 shadow-sm transition focus-within:border-[#3385f0] focus-within:shadow-md ${
+                                            field.type === 'textarea' ||
+                                            (field.type === 'file' && field.multiple)
                                                 ? 'md:col-span-2'
                                                 : ''
-                                        }
+                                        }`}
                                     >
                                         <span className="mb-1 block text-sm font-semibold text-[#4d595e]">
                                             {field.label}
                                         </span>
+                                        {field.help && (
+                                            <span className="mb-2 block text-xs leading-5 text-[#77878f]">
+                                                {field.help}
+                                            </span>
+                                        )}
 
-                                        {field.type === 'textarea' ? (
+                                        {field.type === 'file' ? (
+                                            <div className="rounded-lg border border-dashed border-[#b7d9ef] bg-[#f7fafc] p-4">
+                                                <input
+                                                    type="file"
+                                                    accept="image/jpeg,image/png,image/webp"
+                                                    multiple={field.multiple ?? false}
+                                                    onChange={(event) => {
+                                                        const files = Array.from(event.target.files ?? []);
+                                                        setDatasetImages(files);
+                                                        setData(field.name, field.multiple ? files : (files[0] ?? null));
+                                                    }}
+                                                    className="w-full text-sm text-[#4d595e] file:me-3 file:rounded-lg file:border-0 file:bg-[#3385f0] file:px-3 file:py-2 file:text-sm file:font-bold file:text-white hover:file:bg-[#2b71cc]"
+                                                />
+                                                {datasetImages.length > 0 && (
+                                                    <div className="mt-3 grid gap-2">
+                                                        {datasetImages.map((file) => (
+                                                            <div key={`${file.name}-${file.size}`} className="rounded-md bg-white px-3 py-2 text-xs text-[#4d595e]">
+                                                                {file.name} / {Math.round(file.size / 1024)} KB
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : field.type === 'textarea' ? (
                                             <textarea
                                                 value={String(data[field.name] ?? '')}
                                                 onChange={(event) =>
@@ -357,7 +549,7 @@ export default function ResourceIndex({
                                                 onChange={(event) =>
                                                     setData(field.name, event.target.value)
                                                 }
-                                                className="w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm transition focus:border-[#3385f0] focus:bg-white focus:ring-[#3385f0]"
+                                                className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm transition focus:border-[#3385f0] focus:bg-white focus:ring-[#3385f0]"
                                             >
                                                 <option value="">
                                                     {field.nullable ? 'Kosongkan' : 'Pilih'}
@@ -366,7 +558,7 @@ export default function ResourceIndex({
                                                     (option) =>
                                                         typeof option === 'string' ? (
                                                             <option key={option} value={option}>
-                                                                {labelize(option)}
+                                                                {optionLabel(option)}
                                                             </option>
                                                         ) : (
                                                             <option
@@ -408,7 +600,7 @@ export default function ResourceIndex({
                                                 onChange={(event) =>
                                                     setData(field.name, event.target.value)
                                                 }
-                                                className="w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm transition focus:border-[#3385f0] focus:bg-white focus:ring-[#3385f0]"
+                                                className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm transition focus:border-[#3385f0] focus:bg-white focus:ring-[#3385f0]"
                                             />
                                         )}
 
@@ -420,16 +612,27 @@ export default function ResourceIndex({
                                     </label>
                                 ))}
                             </div>
+                            </div>
 
-                            <button
-                                type="submit"
-                                disabled={processing}
-                                className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#3385f0] px-4 text-sm font-bold text-white shadow-sm transition hover:bg-[#2b71cc] disabled:opacity-60"
-                            >
-                                <Plus className="h-4 w-4" />
-                                {editingId ? 'Simpan perubahan' : 'Tambah data'}
-                            </button>
+                            <div className="flex flex-col-reverse gap-3 border-t border-[#dbe6eb] bg-[#f7fafc] p-5 sm:flex-row sm:items-center sm:justify-end">
+                                <button
+                                    type="button"
+                                    onClick={cancelEdit}
+                                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#c3d3db] bg-white px-4 text-sm font-bold text-[#4d595e] transition hover:bg-[#ebf2f5] hover:text-[#1b2124]"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#3385f0] px-5 text-sm font-bold text-white shadow-sm transition hover:bg-[#2b71cc] disabled:opacity-60"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                    {editingId ? 'Simpan perubahan' : `Tambah ${title}`}
+                                </button>
+                            </div>
                         </form>
+                        </div>
                     )}
 
                     <div className="overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-sm">
@@ -458,10 +661,10 @@ export default function ResourceIndex({
                                                 key={column}
                                                 className="whitespace-nowrap px-5 py-4 text-left text-xs font-bold uppercase tracking-wide text-[#4d595e]"
                                             >
-                                                {labelize(column)}
+                                                {humanLabel(column)}
                                             </th>
                                         ))}
-                                        {(showReadOnlyActions || !readOnly) && (
+                                        {(showDetailActions || !readOnly) && (
                                             <th className="whitespace-nowrap px-5 py-4 text-right text-xs font-bold uppercase tracking-wide text-[#4d595e]">
                                                 Aksi
                                             </th>
@@ -472,7 +675,7 @@ export default function ResourceIndex({
                                     {filteredItems.length === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan={columns.length + (showReadOnlyActions || !readOnly ? 1 : 0)}
+                                                colSpan={columns.length + (showDetailActions || !readOnly ? 1 : 0)}
                                                 className="px-5 py-10 text-center text-[#77878f]"
                                             >
                                                 Data tidak ditemukan. Coba kata kunci lain.
@@ -490,40 +693,53 @@ export default function ResourceIndex({
                                                         className="max-w-[320px] px-5 py-4 text-[#4d595e]"
                                                     >
                                                         <div className="line-clamp-2">
-                                                            {valueBadge(item[column])}
+                                                            {column === 'image_url' && item[column] ? (
+                                                                <img
+                                                                    src={String(item[column])}
+                                                                    alt="Gambar obat"
+                                                                    className="h-14 w-14 rounded-md border border-[#dbe6eb] object-cover"
+                                                                />
+                                                            ) : (
+                                                                valueBadge(item[column])
+                                                            )}
                                                         </div>
                                                     </td>
                                                 ))}
-                                                {showReadOnlyActions && (
+                                                {(showDetailActions || !readOnly) && (
                                                     <td className="whitespace-nowrap px-5 py-4 text-right">
+                                                        {showDetailActions && (
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedItem(item)}
-                                                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
+                                                            aria-label={resource === 'dataset-mappings' ? 'Lihat dataset' : 'Lihat detail'}
+                                                            title={resource === 'dataset-mappings' ? 'Lihat dataset' : 'Lihat detail'}
+                                                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
                                                         >
                                                             <Eye className="h-4 w-4" />
-                                                            Detail
                                                         </button>
-                                                    </td>
-                                                )}
-                                                {!readOnly && (
-                                                    <td className="whitespace-nowrap px-5 py-4 text-right">
+                                                        )}
+                                                        {!readOnly && (
+                                                        <>
                                                         <button
                                                             type="button"
                                                             onClick={() => edit(item)}
-                                                            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
+                                                            aria-label="Edit data"
+                                                            title="Edit data"
+                                                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
                                                         >
                                                             <Pencil className="h-4 w-4" />
-                                                            Edit
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => destroy(item)}
-                                                            className="ms-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-800"
+                                                            aria-label="Hapus data"
+                                                            title="Hapus data"
+                                                            className="ms-2 inline-flex h-9 w-9 items-center justify-center rounded-lg font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-800"
                                                         >
                                                             <Trash2 className="h-4 w-4" />
-                                                            Hapus
                                                         </button>
+                                                        </>
+                                                        )}
                                                     </td>
                                                 )}
                                             </tr>
@@ -535,7 +751,7 @@ export default function ResourceIndex({
                     </div>
             </section>
 
-            {selectedItem && selectedDetail && (
+            {selectedItem && resource === 'consultations' && selectedDetail && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
                     <section className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-2xl">
                         <div className="flex items-start justify-between gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5">
@@ -649,6 +865,8 @@ export default function ResourceIndex({
                                         )}
                                     </DetailSection>
 
+                                    <DatasetPanel dataset={selectedDetail.final_result?.dataset ?? null} />
+
                                     <DetailSection title="Keluhan user">
                                         <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
                                             {selectedDetail.complaint_text || 'Keluhan tidak tersedia.'}
@@ -722,6 +940,192 @@ export default function ResourceIndex({
                     </section>
                 </div>
             )}
+
+            {selectedItem && resource === 'dataset-mappings' && selectedDatasetDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
+                    <section className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-wide text-[#3385f0]">
+                                    Detail dataset SD-198
+                                </p>
+                                <h2 className="mt-1 text-xl font-bold text-[#1b2124]">
+                                    {selectedDatasetDetail.dataset_class_name ?? '-'}
+                                </h2>
+                                <p className="mt-1 text-sm text-[#77878f]">
+                                    Class #{selectedDatasetDetail.dataset_class_id ?? '-'} / {selectedDatasetDetail.nama_indonesia ?? 'Nama Indonesia belum diisi'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedItem(null)}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#dbe6eb] bg-white text-[#4d595e] transition hover:bg-[#ebf2f5]"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[calc(92vh-88px)] overflow-y-auto p-5">
+                            <div className="grid gap-5 lg:grid-cols-[0.9fr_1.2fr]">
+                                <div className="space-y-3">
+                                    <DatasetFact label="Format class" value={`datasets/sd-198/images/${selectedDatasetDetail.dataset_class_name ?? '-'}`} />
+                                    <DatasetFact label="Penyakit lokal" value={selectedDatasetDetail.disease_name ?? 'Belum dihubungkan'} />
+                                    <DatasetFact label="Kategori penggunaan" value={optionLabel(selectedDatasetDetail.scope_category ?? '-')} />
+                                    <DatasetFact label="Arahan default" value={optionLabel(selectedDatasetDetail.default_action ?? '-')} />
+                                    <DatasetFact
+                                        label="Rekomendasi obat"
+                                        value={selectedDatasetDetail.boleh_rekomendasi_obat ? 'Boleh jika skor aman dan tidak ada red flag' : 'Tidak ditampilkan untuk class ini'}
+                                    />
+                                    {selectedDatasetDetail.risk_note && (
+                                        <div className="rounded-lg border border-[#fecc8f] bg-[#fff7ed] p-4">
+                                            <p className="text-xs font-bold uppercase tracking-wide text-[#b35d16]">
+                                                Catatan risiko
+                                            </p>
+                                            <p className="mt-2 text-sm leading-6 text-[#7c3f10]">
+                                                {selectedDatasetDetail.risk_note}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="rounded-lg border border-[#dbe6eb] bg-[#f7fafc] p-4">
+                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-bold text-[#1b2124]">
+                                                Contoh gambar dataset
+                                            </p>
+                                            <p className="mt-1 text-xs leading-5 text-[#77878f]">
+                                                Gambar diambil dari folder class lokal. Jika kosong, berarti folder/file class belum tersedia.
+                                            </p>
+                                        </div>
+                                        <Image className="h-5 w-5 text-[#3385f0]" />
+                                    </div>
+
+                                    {(selectedDatasetDetail.sample_images ?? []).length > 0 ? (
+                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                            {selectedDatasetDetail.sample_images?.map((image) => (
+                                                <figure key={`${image.class_name}-${image.file_name}`} className="rounded-lg border border-[#dbe6eb] bg-white p-2">
+                                                    <img
+                                                        src={image.url}
+                                                        alt={`Contoh dataset ${image.class_name}`}
+                                                        className="aspect-[4/3] w-full rounded-md object-cover"
+                                                    />
+                                                    <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
+                                                        {image.file_name}
+                                                    </figcaption>
+                                                </figure>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <EmptyNote text="Contoh gambar belum ditemukan. Pastikan nama class sama persis dengan folder di datasets/sd-198/images." />
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
+
+            {selectedItem && ['diseases', 'medicines', 'recommendations'].includes(resource) && selectedKnowledgeDetail && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
+                    <section className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-wide text-[#3385f0]">
+                                    Detail {title.toLowerCase()}
+                                </p>
+                                <h2 className="mt-1 text-xl font-bold text-[#1b2124]">
+                                    {selectedKnowledgeDetail.title ?? selectedKnowledgeDetail.medicine_name ?? selectedKnowledgeDetail.disease_name ?? '-'}
+                                </h2>
+                                <p className="mt-1 text-sm text-[#77878f]">
+                                    Terhubung ke dataset: {selectedKnowledgeDetail.dataset?.dataset_class_name ?? 'Belum dipilih'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedItem(null)}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#dbe6eb] bg-white text-[#4d595e] transition hover:bg-[#ebf2f5]"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[calc(92vh-88px)] overflow-y-auto p-5">
+                            <div className="grid gap-5 lg:grid-cols-[0.85fr_1.25fr]">
+                                <div className="space-y-3">
+                                    {(selectedKnowledgeDetail.image_url || selectedKnowledgeDetail.medicine_image_url) && (
+                                        <div className="rounded-lg border border-[#dbe6eb] bg-white p-3">
+                                            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                                Gambar obat
+                                            </p>
+                                            <img
+                                                src={selectedKnowledgeDetail.image_url ?? selectedKnowledgeDetail.medicine_image_url ?? ''}
+                                                alt="Gambar obat"
+                                                className="h-56 w-full rounded-md object-cover"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {resource === 'diseases' && (
+                                        <DatasetFact label="Penyakit" value={selectedKnowledgeDetail.title ?? '-'} />
+                                    )}
+                                    {resource !== 'diseases' && (
+                                        <DatasetFact label="Penyakit" value={selectedKnowledgeDetail.disease_name ?? '-'} />
+                                    )}
+                                    {resource !== 'diseases' && (
+                                        <DatasetFact label="Obat" value={selectedKnowledgeDetail.medicine_name ?? selectedKnowledgeDetail.title ?? '-'} />
+                                    )}
+                                    {selectedKnowledgeDetail.category && <DatasetFact label="Kategori obat" value={selectedKnowledgeDetail.category} />}
+                                    {selectedKnowledgeDetail.dosage_form && <DatasetFact label="Bentuk sediaan" value={selectedKnowledgeDetail.dosage_form} />}
+                                    {selectedKnowledgeDetail.default_action && <DatasetFact label="Arahan default" value={optionLabel(selectedKnowledgeDetail.default_action)} />}
+                                    {selectedKnowledgeDetail.severity_scope && <DatasetFact label="Tingkat risiko" value={optionLabel(selectedKnowledgeDetail.severity_scope)} />}
+                                    {selectedKnowledgeDetail.priority !== undefined && <DatasetFact label="Urutan tampil" value={String(selectedKnowledgeDetail.priority)} />}
+                                </div>
+
+                                <div className="space-y-4">
+                                    <DatasetPanel dataset={selectedKnowledgeDetail.dataset ?? null} />
+
+                                    {selectedKnowledgeDetail.description && (
+                                        <DetailSection title="Deskripsi">
+                                            <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
+                                                {selectedKnowledgeDetail.description}
+                                            </p>
+                                        </DetailSection>
+                                    )}
+                                    {selectedKnowledgeDetail.usage_instruction && (
+                                        <DetailSection title="Aturan pakai">
+                                            <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
+                                                {selectedKnowledgeDetail.usage_instruction}
+                                            </p>
+                                        </DetailSection>
+                                    )}
+                                    {selectedKnowledgeDetail.recommendation_note && (
+                                        <DetailSection title="Catatan rekomendasi">
+                                            <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
+                                                {selectedKnowledgeDetail.recommendation_note}
+                                            </p>
+                                        </DetailSection>
+                                    )}
+                                    {selectedKnowledgeDetail.warnings && (
+                                        <DetailSection title="Peringatan">
+                                            <p className="rounded-lg border border-[#fecc8f] bg-[#fff7ed] p-4 text-sm leading-6 text-[#7c3f10]">
+                                                {selectedKnowledgeDetail.warnings}
+                                            </p>
+                                        </DetailSection>
+                                    )}
+                                    {selectedKnowledgeDetail.source_note && (
+                                        <DetailSection title="Sumber">
+                                            <p className="rounded-lg border border-[#dbe6eb] bg-white p-4 text-sm leading-6 text-[#4d595e]">
+                                                {selectedKnowledgeDetail.source_note}
+                                            </p>
+                                        </DetailSection>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            )}
         </AdminLayout>
     );
 }
@@ -749,5 +1153,51 @@ function EmptyNote({ text }: { text: string }) {
         <p className="rounded-lg border border-dashed border-[#c3d3db] bg-white px-4 py-3 text-sm leading-6 text-[#77878f]">
             {text}
         </p>
+    );
+}
+
+function DatasetFact({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="rounded-lg border border-[#dbe6eb] bg-white p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-[#77878f]">{label}</p>
+            <p className="mt-2 break-words text-sm font-semibold leading-6 text-[#1b2124]">{value}</p>
+        </div>
+    );
+}
+
+function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
+    return (
+        <DetailSection title="Dataset terkait">
+            {dataset ? (
+                <div className="grid gap-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <DatasetFact label="Class SD-198" value={dataset.dataset_class_name ?? '-'} />
+                        <DatasetFact label="Nomor class" value={String(dataset.dataset_class_id ?? '-')} />
+                        <DatasetFact label="Nama Indonesia" value={dataset.nama_indonesia ?? '-'} />
+                        <DatasetFact label="Kategori penggunaan" value={optionLabel(dataset.scope_category ?? '-')} />
+                    </div>
+                    {(dataset.sample_images ?? []).length > 0 ? (
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {dataset.sample_images?.slice(0, 6).map((image) => (
+                                <figure key={`${image.class_name}-${image.file_name}`} className="rounded-lg border border-[#dbe6eb] bg-white p-2">
+                                    <img
+                                        src={image.url}
+                                        alt={`Contoh dataset ${image.class_name}`}
+                                        className="aspect-[4/3] w-full rounded-md object-cover"
+                                    />
+                                    <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
+                                        {image.file_name}
+                                    </figcaption>
+                                </figure>
+                            ))}
+                        </div>
+                    ) : (
+                        <EmptyNote text="Gambar dataset belum tersedia untuk class ini." />
+                    )}
+                </div>
+            ) : (
+                <EmptyNote text="Elemen ini belum dihubungkan ke dataset. Pilih dataset agar knowledge base tidak berdiri sendiri." />
+            )}
+        </DetailSection>
     );
 }

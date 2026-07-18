@@ -10,6 +10,7 @@ class DiseaseMedicineRecommendation extends Model
     protected $fillable = [
         'disease_id',
         'medicine_id',
+        'dataset_class_mapping_id',
         'recommendation_note',
         'priority',
         'is_active',
@@ -28,5 +29,10 @@ class DiseaseMedicineRecommendation extends Model
     public function medicine(): BelongsTo
     {
         return $this->belongsTo(Medicine::class);
+    }
+
+    public function datasetClassMapping(): BelongsTo
+    {
+        return $this->belongsTo(DatasetClassMapping::class);
     }
 }
