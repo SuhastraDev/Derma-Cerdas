@@ -54,7 +54,8 @@ class KnowledgeBaseController extends Controller
     public function datasetMappingImages(DatasetClassMapping $datasetMapping): JsonResponse
     {
         return response()->json([
-            'images' => $this->datasetImages($datasetMapping),
+            'images' => $this->datasetSampleImages($datasetMapping),
+            'image_count' => $this->datasetImageCount($datasetMapping),
         ]);
     }
 
@@ -351,7 +352,6 @@ class KnowledgeBaseController extends Controller
                 'default_action' => $item->default_action,
                 'disease_name' => $item->disease?->name_indonesian ?: $item->disease?->name,
                 'risk_note' => $item->risk_note,
-                'sample_images' => $this->datasetSampleImages($item),
                 'image_count' => $this->datasetImageCount($item),
             ];
         }
@@ -508,17 +508,27 @@ class KnowledgeBaseController extends Controller
             return [];
         }
 
-        return collect(scandir($directory) ?: [])
-            ->filter(fn (string $file): bool => $this->isReadableDatasetImage($directory.DIRECTORY_SEPARATOR.$file))
-            ->sort(SORT_NATURAL | SORT_FLAG_CASE)
-            ->take(6)
-            ->map(fn (string $file): array => [
+        $images = [];
+        $files = collect(scandir($directory) ?: [])
+            ->sort(SORT_NATURAL | SORT_FLAG_CASE);
+
+        foreach ($files as $file) {
+            if (! $this->isReadableDatasetImage($directory.DIRECTORY_SEPARATOR.$file)) {
+                continue;
+            }
+
+            $images[] = [
                 'class_name' => $className,
                 'file_name' => $file,
                 'url' => route('dataset.example-image', [$className, $file]),
-            ])
-            ->values()
-            ->all();
+            ];
+
+            if (count($images) >= 6) {
+                break;
+            }
+        }
+
+        return $images;
     }
 
     private function datasetImageCount(DatasetClassMapping $mapping): int

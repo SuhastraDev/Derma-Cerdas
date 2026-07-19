@@ -79,11 +79,6 @@ type DatasetDetail = {
         file_name: string;
         url: string;
     }>;
-    all_images?: Array<{
-        class_name: string;
-        file_name: string;
-        url: string;
-    }>;
     image_count?: number;
 };
 type DatasetSampleImage = NonNullable<DatasetDetail['sample_images']>[number];
@@ -288,7 +283,6 @@ function percent(value?: number): string {
 }
 
 const pageSize = 25;
-const galleryPageSize = 30;
 
 export default function ResourceIndex({
     resource,
@@ -304,6 +298,7 @@ export default function ResourceIndex({
     const [editingId, setEditingId] = useState<number | null>(null);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+    const [detailImagesLoading, setDetailImagesLoading] = useState(false);
     const [datasetImages, setDatasetImages] = useState<File[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [scopeFilter, setScopeFilter] = useState('');
@@ -311,13 +306,6 @@ export default function ResourceIndex({
     const [medicineFilter, setMedicineFilter] = useState('');
     const [relationFilter, setRelationFilter] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [galleryDataset, setGalleryDataset] = useState<DatasetDetail | null>(
-        null,
-    );
-    const [galleryImages, setGalleryImages] = useState<DatasetSampleImage[]>([]);
-    const [galleryLoading, setGalleryLoading] = useState(false);
-    const [galleryError, setGalleryError] = useState('');
-    const [galleryPage, setGalleryPage] = useState(1);
     const { data, setData, post, put, processing, errors, reset } =
         useForm<FormData>(initialData);
 
@@ -462,31 +450,24 @@ export default function ResourceIndex({
     const selectedDatasetDetail = selectedItem?.detail as DatasetDetail | undefined;
     const selectedKnowledgeDetail = selectedItem?.detail as KnowledgeDetail | undefined;
     const showDetailActions = ['consultations', 'dataset-mappings', 'diseases', 'medicines', 'recommendations'].includes(resource);
-    const galleryTotalPages = Math.max(
-        1,
-        Math.ceil(galleryImages.length / galleryPageSize),
-    );
-    const activeGalleryPage = Math.min(galleryPage, galleryTotalPages);
-    const paginatedGalleryImages = galleryImages.slice(
-        (activeGalleryPage - 1) * galleryPageSize,
-        activeGalleryPage * galleryPageSize,
-    );
-    const openDatasetGallery = async (dataset: DatasetDetail) => {
-        setGalleryDataset(dataset);
-        setGalleryImages([]);
-        setGalleryError('');
-        setGalleryLoading(true);
-        setGalleryPage(1);
+    const viewItem = async (item: Item) => {
+        setSelectedItem(item);
 
-        if (!dataset.id) {
-            setGalleryImages(dataset.sample_images ?? []);
-            setGalleryLoading(false);
+        if (resource !== 'dataset-mappings') {
             return;
         }
 
+        const detail = item.detail as DatasetDetail | undefined;
+
+        if (!detail?.id) {
+            return;
+        }
+
+        setDetailImagesLoading(true);
+
         try {
             const response = await fetch(
-                route('admin.dataset-mappings.images', dataset.id),
+                route('admin.dataset-mappings.images', detail.id),
                 {
                     headers: {
                         Accept: 'application/json',
@@ -495,17 +476,49 @@ export default function ResourceIndex({
             );
 
             if (!response.ok) {
-                throw new Error('Gagal memuat galeri dataset.');
+                throw new Error('Gagal memuat sample dataset.');
             }
 
             const payload = (await response.json()) as {
                 images?: DatasetSampleImage[];
+                image_count?: number;
             };
-            setGalleryImages(payload.images ?? []);
+
+            setSelectedItem((current) => {
+                if (!current || current.id !== item.id) {
+                    return current;
+                }
+
+                const currentDetail = current.detail as DatasetDetail | undefined;
+
+                return {
+                    ...current,
+                    detail: {
+                        ...currentDetail,
+                        sample_images: payload.images ?? [],
+                        image_count:
+                            payload.image_count ?? currentDetail?.image_count ?? 0,
+                    },
+                };
+            });
         } catch {
-            setGalleryError('Galeri gagal dimuat. Coba refresh halaman atau cek file dataset.');
+            setSelectedItem((current) => {
+                if (!current || current.id !== item.id) {
+                    return current;
+                }
+
+                const currentDetail = current.detail as DatasetDetail | undefined;
+
+                return {
+                    ...current,
+                    detail: {
+                        ...currentDetail,
+                        sample_images: [],
+                    },
+                };
+            });
         } finally {
-            setGalleryLoading(false);
+            setDetailImagesLoading(false);
         }
     };
 
@@ -944,7 +957,7 @@ export default function ResourceIndex({
                                                         {showDetailActions && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => setSelectedItem(item)}
+                                                            onClick={() => void viewItem(item)}
                                                             aria-label={resource === 'dataset-mappings' ? 'Lihat dataset' : 'Lihat detail'}
                                                             title={resource === 'dataset-mappings' ? 'Lihat dataset' : 'Lihat detail'}
                                                             className="inline-flex h-9 w-9 items-center justify-center rounded-lg font-semibold text-[#3385f0] transition hover:bg-[#eaf3fd] hover:text-[#245da8]"
@@ -1134,7 +1147,6 @@ export default function ResourceIndex({
 
                                     <DatasetPanel
                                         dataset={selectedDetail.final_result?.dataset ?? null}
-                                        onOpenGallery={openDatasetGallery}
                                     />
 
                                     <DetailSection title="Keluhan user">
@@ -1242,7 +1254,7 @@ export default function ResourceIndex({
                                     <DatasetFact label="Penyakit lokal" value={selectedDatasetDetail.disease_name ?? 'Belum dihubungkan'} />
                                     <DatasetFact label="Kategori penggunaan" value={optionLabel(selectedDatasetDetail.scope_category ?? '-')} />
                                     <DatasetFact label="Arahan default" value={optionLabel(selectedDatasetDetail.default_action ?? '-')} />
-                                    <DatasetFact label="Total gambar terbaca" value={`${selectedDatasetDetail.image_count ?? selectedDatasetDetail.all_images?.length ?? 0} gambar`} />
+                                    <DatasetFact label="Total gambar" value={`${selectedDatasetDetail.image_count ?? 0} gambar`} />
                                     <DatasetFact
                                         label="Rekomendasi obat"
                                         value={selectedDatasetDetail.boleh_rekomendasi_obat ? 'Boleh jika skor aman dan tidak ada red flag' : 'Tidak ditampilkan untuk class ini'}
@@ -1266,23 +1278,15 @@ export default function ResourceIndex({
                                                 Contoh gambar dataset
                                             </p>
                                             <p className="mt-1 text-xs leading-5 text-[#77878f]">
-                                                Menampilkan beberapa sample. Buka galeri untuk melihat semua gambar class ini.
+                                                Menampilkan 2-6 sample yang benar-benar bisa dibuka browser.
                                             </p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                openDatasetGallery(selectedDatasetDetail)
-                                            }
-                                            disabled={(selectedDatasetDetail.image_count ?? 0) === 0}
-                                            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#3385f0] px-3 text-xs font-bold text-white transition hover:bg-[#2b71cc] disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            <Image className="h-4 w-4" />
-                                            Lihat semua
-                                        </button>
+                                        <Image className="h-5 w-5 text-[#3385f0]" />
                                     </div>
 
-                                    {(selectedDatasetDetail.sample_images ?? []).length > 0 ? (
+                                    {detailImagesLoading ? (
+                                        <EmptyNote text="Sedang memuat sample gambar yang valid..." />
+                                    ) : (selectedDatasetDetail.sample_images ?? []).length > 0 ? (
                                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                             {selectedDatasetDetail.sample_images?.map((image) => (
                                                 <DatasetSampleFigure
@@ -1360,7 +1364,6 @@ export default function ResourceIndex({
                                 <div className="space-y-4">
                                     <DatasetPanel
                                         dataset={selectedKnowledgeDetail.dataset ?? null}
-                                        onOpenGallery={openDatasetGallery}
                                     />
 
                                     {selectedKnowledgeDetail.description && (
@@ -1405,87 +1408,6 @@ export default function ResourceIndex({
                 </div>
             )}
 
-            {galleryDataset && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#1b2124]/65 p-4 backdrop-blur-sm">
-                    <section className="max-h-[94vh] w-full max-w-6xl overflow-hidden rounded-lg border border-[#dbe6eb] bg-white shadow-2xl">
-                        <div className="flex flex-col gap-4 border-b border-[#dbe6eb] bg-[#f7fafc] p-5 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-wide text-[#3385f0]">
-                                    Galeri dataset
-                                </p>
-                                <h2 className="mt-1 text-xl font-bold text-[#1b2124]">
-                                    {galleryDataset.dataset_class_name ?? '-'}
-                                </h2>
-                                <p className="mt-1 text-sm text-[#77878f]">
-                                    {galleryLoading
-                                        ? 'Memuat daftar gambar...'
-                                        : `${galleryImages.length} gambar terbaca / tampil ${galleryPageSize} per halaman.`}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setGalleryDataset(null)}
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#dbe6eb] bg-white text-[#4d595e] transition hover:bg-[#ebf2f5]"
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <div className="max-h-[calc(94vh-172px)] overflow-y-auto p-5">
-                            {galleryLoading ? (
-                                <EmptyNote text="Sedang memuat galeri dataset..." />
-                            ) : galleryError ? (
-                                <EmptyNote text={galleryError} />
-                            ) : paginatedGalleryImages.length > 0 ? (
-                                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
-                                    {paginatedGalleryImages.map((image) => (
-                                        <DatasetSampleFigure
-                                            key={`${image.class_name}-${image.file_name}`}
-                                            image={image}
-                                        />
-                                    ))}
-                                </div>
-                            ) : (
-                                <EmptyNote text="Belum ada gambar dataset yang bisa dibaca untuk class ini." />
-                            )}
-                        </div>
-
-                        <div className="flex flex-col gap-3 border-t border-[#dbe6eb] bg-[#f7fafc] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm text-[#77878f]">
-                                Halaman {activeGalleryPage} dari {galleryTotalPages}
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setGalleryPage((page) =>
-                                            Math.max(1, page - 1),
-                                        )
-                                    }
-                                    disabled={activeGalleryPage === 1}
-                                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6eb] bg-white px-3 text-sm font-bold text-[#4d595e] transition hover:bg-[#ebf2f5] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                    Sebelumnya
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setGalleryPage((page) =>
-                                            Math.min(galleryTotalPages, page + 1),
-                                        )
-                                    }
-                                    disabled={activeGalleryPage === galleryTotalPages}
-                                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#3385f0] px-3 text-sm font-bold text-white transition hover:bg-[#2b71cc] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    Berikutnya
-                                    <ChevronRight className="h-4 w-4" />
-                                </button>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-            )}
         </AdminLayout>
     );
 }
@@ -1525,13 +1447,7 @@ function DatasetFact({ label, value }: { label: string; value: string }) {
     );
 }
 
-function DatasetPanel({
-    dataset,
-    onOpenGallery,
-}: {
-    dataset: DatasetDetail | null;
-    onOpenGallery: (dataset: DatasetDetail) => void;
-}) {
+function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
     return (
         <DetailSection title="Dataset terkait">
             {dataset ? (
@@ -1541,23 +1457,13 @@ function DatasetPanel({
                         <DatasetFact label="Nomor class" value={String(dataset.dataset_class_id ?? '-')} />
                         <DatasetFact label="Nama Indonesia" value={dataset.nama_indonesia ?? '-'} />
                         <DatasetFact label="Kategori penggunaan" value={optionLabel(dataset.scope_category ?? '-')} />
-                        <DatasetFact label="Total gambar terbaca" value={`${dataset.image_count ?? dataset.all_images?.length ?? 0} gambar`} />
+                        <DatasetFact label="Total gambar" value={`${dataset.image_count ?? 0} gambar`} />
                     </div>
                     {(dataset.sample_images ?? []).length > 0 ? (
                         <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm font-semibold text-[#4d595e]">
-                                    Sample gambar dataset
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={() => onOpenGallery(dataset)}
-                                    className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#3385f0] px-3 text-xs font-bold text-white transition hover:bg-[#2b71cc]"
-                                >
-                                    <Image className="h-4 w-4" />
-                                    Lihat semua
-                                </button>
-                            </div>
+                            <p className="text-sm font-semibold text-[#4d595e]">
+                                Sample gambar dataset
+                            </p>
                             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                 {dataset.sample_images?.slice(0, 6).map((image) => (
                                     <DatasetSampleFigure
