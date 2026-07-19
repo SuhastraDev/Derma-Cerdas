@@ -524,7 +524,7 @@ class KnowledgeBaseController extends Controller
                 'thumb_url' => route('dataset.example-image', [$className, $file]).'?thumb=1',
             ];
 
-            if (count($images) >= 6) {
+            if (count($images) >= 24) {
                 break;
             }
         }

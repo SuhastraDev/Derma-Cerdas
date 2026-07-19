@@ -14,7 +14,7 @@ import {
     Trash2,
     X,
 } from 'lucide-react';
-import { FormEvent, ReactNode, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 type Field = {
     name: string;
@@ -1279,7 +1279,7 @@ export default function ResourceIndex({
                                                 Contoh gambar dataset
                                             </p>
                                             <p className="mt-1 text-xs leading-5 text-[#77878f]">
-                                                Menampilkan 2-6 sample yang benar-benar bisa dibuka browser.
+                                                Menampilkan hingga 6 sample yang berhasil dibuka browser.
                                             </p>
                                         </div>
                                         <Image className="h-5 w-5 text-[#3385f0]" />
@@ -1288,14 +1288,7 @@ export default function ResourceIndex({
                                     {detailImagesLoading ? (
                                         <EmptyNote text="Sedang memuat sample gambar yang valid..." />
                                     ) : (selectedDatasetDetail.sample_images ?? []).length > 0 ? (
-                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                            {selectedDatasetDetail.sample_images?.map((image) => (
-                                                <DatasetSampleFigure
-                                                    key={`${image.class_name}-${image.file_name}`}
-                                                    image={image}
-                                                />
-                                            ))}
-                                        </div>
+                                        <DatasetSampleGrid images={selectedDatasetDetail.sample_images ?? []} />
                                     ) : (
                                         <EmptyNote text="Contoh gambar belum ditemukan. Pastikan nama class sama persis dengan folder di datasets/sd-198/images." />
                                     )}
@@ -1465,14 +1458,7 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
                             <p className="text-sm font-semibold text-[#4d595e]">
                                 Sample gambar dataset
                             </p>
-                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                {dataset.sample_images?.slice(0, 6).map((image) => (
-                                    <DatasetSampleFigure
-                                        key={`${image.class_name}-${image.file_name}`}
-                                        image={image}
-                                    />
-                                ))}
-                            </div>
+                            <DatasetSampleGrid images={dataset.sample_images ?? []} />
                         </div>
                     ) : (
                         <EmptyNote text="Gambar dataset belum tersedia untuk class ini." />
@@ -1485,19 +1471,75 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
     );
 }
 
-function DatasetSampleFigure({ image }: { image: DatasetSampleImage }) {
+function DatasetSampleGrid({ images, limit = 6 }: { images: DatasetSampleImage[]; limit?: number }) {
+    const [slots, setSlots] = useState<number[]>([]);
+    const nextIndexRef = useRef(0);
+
+    useEffect(() => {
+        const initialCount = Math.min(limit, images.length);
+        setSlots(Array.from({ length: initialCount }, (_, index) => index));
+        nextIndexRef.current = initialCount;
+    }, [images, limit]);
+
+    const replaceFailedImage = (slotPosition: number) => {
+        setSlots((currentSlots) => {
+            const nextIndex = nextIndexRef.current;
+
+            if (nextIndex < images.length) {
+                nextIndexRef.current = nextIndex + 1;
+
+                return currentSlots.map((imageIndex, index) =>
+                    index === slotPosition ? nextIndex : imageIndex,
+                );
+            }
+
+            return currentSlots.filter((_, index) => index !== slotPosition);
+        });
+    };
+
+    if (slots.length === 0) {
+        return <EmptyNote text="Belum ada sample gambar yang bisa ditampilkan." />;
+    }
+
+    return (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {slots.map((imageIndex, slotPosition) => {
+                const image = images[imageIndex];
+
+                if (! image) {
+                    return null;
+                }
+
+                return (
+                    <DatasetSampleFigure
+                        key={`${slotPosition}-${image.class_name}-${image.file_name}`}
+                        image={image}
+                        onFailed={() => replaceFailedImage(slotPosition)}
+                    />
+                );
+            })}
+        </div>
+    );
+}
+
+function DatasetSampleFigure({ image, onFailed }: { image: DatasetSampleImage; onFailed: () => void }) {
     const [failed, setFailed] = useState(false);
 
-    if (failed) {
-        return null;
-    }
+    useEffect(() => {
+        setFailed(false);
+    }, [image]);
 
     return (
         <figure className="rounded-lg border border-[#dbe6eb] bg-white p-2">
             <img
                 src={image.thumb_url ?? image.url}
                 alt={`Contoh dataset ${image.class_name}`}
-                onError={() => setFailed(true)}
+                onError={() => {
+                    if (! failed) {
+                        setFailed(true);
+                        onFailed();
+                    }
+                }}
                 className="aspect-[4/3] w-full rounded-md object-cover"
                 loading="lazy"
                 decoding="async"
