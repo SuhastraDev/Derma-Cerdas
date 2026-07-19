@@ -69,11 +69,13 @@ type DatasetDetail = {
     dataset_class_id?: number;
     dataset_class_name?: string;
     nama_indonesia?: string | null;
+    clinical_group?: string | null;
     scope_category?: string;
     boleh_rekomendasi_obat?: boolean;
     default_action?: string;
     disease_name?: string | null;
     risk_note?: string | null;
+    source_note?: string | null;
     sample_images?: Array<{
         class_name: string;
         file_name: string;
@@ -152,6 +154,7 @@ const humanLabels: Record<string, string> = {
     dataset_name: 'Dataset',
     image_url: 'Gambar',
     nama_indonesia: 'Nama Indonesia',
+    clinical_group: 'Kelompok Klinis',
     scope_category: 'Kategori',
     session_code: 'Kode Riwayat',
     visitor_name: 'Nama User',
@@ -164,6 +167,7 @@ const humanLabels: Record<string, string> = {
     value: 'Value',
     group: 'Grup',
     description: 'Deskripsi',
+    source_note: 'Sumber Klinis',
 };
 
 const optionLabels: Record<string, string> = {
@@ -1253,6 +1257,7 @@ export default function ResourceIndex({
                                 <div className="space-y-3">
                                     <DatasetFact label="Format class" value={`datasets/sd-198/images/${selectedDatasetDetail.dataset_class_name ?? '-'}`} />
                                     <DatasetFact label="Penyakit lokal" value={selectedDatasetDetail.disease_name ?? 'Belum dihubungkan'} />
+                                    <DatasetFact label="Kelompok klinis" value={selectedDatasetDetail.clinical_group ?? '-'} />
                                     <DatasetFact label="Kategori penggunaan" value={optionLabel(selectedDatasetDetail.scope_category ?? '-')} />
                                     <DatasetFact label="Arahan default" value={optionLabel(selectedDatasetDetail.default_action ?? '-')} />
                                     <DatasetFact label="Total gambar" value={`${selectedDatasetDetail.image_count ?? 0} gambar`} />
@@ -1267,6 +1272,16 @@ export default function ResourceIndex({
                                             </p>
                                             <p className="mt-2 text-sm leading-6 text-[#7c3f10]">
                                                 {selectedDatasetDetail.risk_note}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {selectedDatasetDetail.source_note && (
+                                        <div className="rounded-lg border border-[#dbe6eb] bg-white p-4">
+                                            <p className="text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                                Sumber klinis
+                                            </p>
+                                            <p className="mt-2 break-words text-sm leading-6 text-[#4d595e]">
+                                                {selectedDatasetDetail.source_note}
                                             </p>
                                         </div>
                                     )}
@@ -1450,6 +1465,7 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
                         <DatasetFact label="Class SD-198" value={dataset.dataset_class_name ?? '-'} />
                         <DatasetFact label="Nomor class" value={String(dataset.dataset_class_id ?? '-')} />
                         <DatasetFact label="Nama Indonesia" value={dataset.nama_indonesia ?? '-'} />
+                        <DatasetFact label="Kelompok klinis" value={dataset.clinical_group ?? '-'} />
                         <DatasetFact label="Kategori penggunaan" value={optionLabel(dataset.scope_category ?? '-')} />
                         <DatasetFact label="Total gambar" value={`${dataset.image_count ?? 0} gambar`} />
                     </div>

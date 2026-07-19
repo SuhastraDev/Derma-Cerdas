@@ -13,6 +13,7 @@ class Disease extends Model
         'slug',
         'name_indonesian',
         'description',
+        'source_note',
         'severity_scope',
         'default_action',
         'is_active',

@@ -11,11 +11,13 @@ class DatasetClassMapping extends Model
         'dataset_class_id',
         'dataset_class_name',
         'nama_indonesia',
+        'clinical_group',
         'scope_category',
         'boleh_rekomendasi_obat',
         'default_action',
         'disease_id',
         'risk_note',
+        'source_note',
     ];
 
     protected $casts = [

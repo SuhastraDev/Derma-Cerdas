@@ -1,0 +1,400 @@
+<?php
+
+namespace App\Support;
+
+use Illuminate\Support\Str;
+
+class DatasetDiseaseMapper
+{
+    /**
+     * @var array<string, array<string, mixed>>
+     */
+    private const GROUPS = [
+        'ACNE_FOLLICULAR' => [
+            'code' => 'ACNE_FOLLICULAR',
+            'name' => 'Acne and follicular disorders',
+            'name_indonesian' => 'Akne dan gangguan folikular ringan',
+            'clinical_group' => 'Akne & folikular ringan',
+            'description' => 'Kelompok keluhan akne, sumbatan folikel, dan iritasi folikular yang dapat diberi edukasi perawatan kulit dan swamedikasi terbatas bila ringan.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'swamedikasi',
+            'default_action' => 'recommend_otc',
+            'boleh_rekomendasi_obat' => true,
+            'source_note' => 'DermNet acne vulgaris: https://dermnetnz.org/topics/acne-vulgaris; DermNet A-Z follicular disorders: https://dermnetnz.org/topics',
+            'risk_note' => 'Swamedikasi hanya untuk keluhan ringan. Rujuk bila nyeri berat, luas, bernanah, jaringan parut berat, atau tidak membaik.',
+        ],
+        'DERMATITIS_ECZEMA' => [
+            'code' => 'DERMATITIS_ECZEMA',
+            'name' => 'Dermatitis and eczema',
+            'name_indonesian' => 'Dermatitis dan eksim',
+            'clinical_group' => 'Dermatitis/Eksim',
+            'description' => 'Kelompok dermatitis/eksim dengan gatal, kemerahan, kering, atau iritasi yang umumnya membutuhkan edukasi pemicu dan perawatan barrier kulit.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'swamedikasi',
+            'default_action' => 'recommend_otc',
+            'boleh_rekomendasi_obat' => true,
+            'source_note' => 'DermNet dermatitis/eczema: https://dermnetnz.org/topics/dermatitis',
+            'risk_note' => 'Rujuk bila ruam luas, bernanah, sangat nyeri, mengenai area sensitif, bayi/hamil/imun lemah, atau dicurigai reaksi obat berat.',
+        ],
+        'FUNGAL_SUPERFICIAL' => [
+            'code' => 'FUNGAL_SUPERFICIAL',
+            'name' => 'Superficial fungal infection',
+            'name_indonesian' => 'Infeksi jamur kulit superfisial',
+            'clinical_group' => 'Jamur kulit superfisial',
+            'description' => 'Kelompok infeksi jamur superfisial seperti tinea, kandidiasis terbatas, dan jamur kuku yang membutuhkan edukasi kebersihan serta antijamur terbatas sesuai scope.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'swamedikasi',
+            'default_action' => 'recommend_otc',
+            'boleh_rekomendasi_obat' => true,
+            'source_note' => 'DermNet tinea/fungal infections: https://dermnetnz.org/topics/tinea; DermNet A-Z fungal infections: https://dermnetnz.org/topics',
+            'risk_note' => 'Rujuk bila luas, bernanah, nyeri berat, mengenai kulit kepala dalam/kerion, diabetes/imun lemah, atau tidak membaik.',
+        ],
+        'FUNGAL_REFER' => [
+            'code' => 'FUNGAL_REFER',
+            'name' => 'Fungal infection referral',
+            'name_indonesian' => 'Infeksi jamur perlu rujukan',
+            'clinical_group' => 'Jamur kulit rujukan',
+            'description' => 'Kelompok infeksi jamur yang tidak aman untuk swamedikasi karena dapat dalam, inflamasi berat, atau membutuhkan terapi resep.',
+            'severity_scope' => 'danger',
+            'scope_category' => 'rujuk',
+            'default_action' => 'refer',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet tinea/fungal infections: https://dermnetnz.org/topics/tinea; DermNet A-Z fungal infections: https://dermnetnz.org/topics',
+            'risk_note' => 'Perlu pemeriksaan langsung dan kemungkinan terapi resep. Jangan tampilkan rekomendasi obat mandiri.',
+        ],
+        'BACTERIAL_INFECTIOUS_REFER' => [
+            'code' => 'BACTERIAL_INFECTIOUS_REFER',
+            'name' => 'Bacterial infection and wound referral',
+            'name_indonesian' => 'Infeksi bakteri, luka, dan ulkus perlu rujukan',
+            'clinical_group' => 'Bakteri/infeksi serius',
+            'description' => 'Kelompok infeksi bakteri, luka, ulkus, dan kondisi inflamasi berat yang tidak aman untuk rekomendasi obat bebas.',
+            'severity_scope' => 'danger',
+            'scope_category' => 'rujuk',
+            'default_action' => 'refer',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'MSD Manual cellulitis: https://www.msdmanuals.com/professional/infectious-diseases/bacterial-skin-infections/cellulitis; CDC cellulitis: https://www.cdc.gov/group-a-strep/about/cellulitis.html',
+            'risk_note' => 'Perlu pemeriksaan langsung karena dapat membutuhkan antibiotik resep, perawatan luka, atau evaluasi komplikasi.',
+        ],
+        'VIRAL_REFER' => [
+            'code' => 'VIRAL_REFER',
+            'name' => 'Viral skin infection referral',
+            'name_indonesian' => 'Infeksi virus kulit perlu rujukan',
+            'clinical_group' => 'Virus kulit rujukan',
+            'description' => 'Kelompok infeksi virus seperti herpes, zoster, atau varicella yang dapat membutuhkan terapi resep dan penilaian risiko komplikasi.',
+            'severity_scope' => 'danger',
+            'scope_category' => 'rujuk',
+            'default_action' => 'refer',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z viral infections: https://dermnetnz.org/topics',
+            'risk_note' => 'Rujuk karena risiko nyeri berat, penularan, komplikasi mata/saraf, atau kebutuhan antivirus resep.',
+        ],
+        'VIRAL_EDUCATION' => [
+            'code' => 'VIRAL_EDUCATION',
+            'name' => 'Benign viral lesions education',
+            'name_indonesian' => 'Lesi virus jinak untuk edukasi',
+            'clinical_group' => 'Virus kulit edukasi',
+            'description' => 'Kelompok lesi virus jinak seperti kutil atau molluscum yang umumnya tidak menjadi target obat OTC otomatis.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'edukasi',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z viral infections and benign lesions: https://dermnetnz.org/topics',
+            'risk_note' => 'Berikan edukasi dan rujuk bila nyeri, infeksi sekunder, cepat menyebar, area sensitif, atau pasien rentan.',
+        ],
+        'PSORIASIS_PAPULOSQUAMOUS' => [
+            'code' => 'PSORIASIS_PAPULOSQUAMOUS',
+            'name' => 'Psoriasis and papulosquamous disorders',
+            'name_indonesian' => 'Psoriasis dan gangguan papuloskuamosa',
+            'clinical_group' => 'Psoriasis & papuloskuamosa',
+            'description' => 'Kelompok psoriasis, lichen, dan ruam papuloskuamosa yang membutuhkan edukasi dan evaluasi tingkat keparahan sebelum terapi.',
+            'severity_scope' => 'moderate',
+            'scope_category' => 'edukasi',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet psoriasis: https://dermnetnz.org/topics/psoriasis; DermNet A-Z inflammatory rashes: https://dermnetnz.org/topics',
+            'risk_note' => 'Tidak diberi rekomendasi obat otomatis. Rujuk bila luas, nyeri, pustular, mukosa/kuku berat, atau mengganggu fungsi.',
+        ],
+        'SKIN_CANCER_REFER' => [
+            'code' => 'SKIN_CANCER_REFER',
+            'name' => 'Suspicious premalignant or malignant skin lesion',
+            'name_indonesian' => 'Lesi kanker/prakanker/mencurigakan',
+            'clinical_group' => 'Lesi kanker/prakanker/mencurigakan',
+            'description' => 'Kelompok lesi kanker kulit, prakanker, melanoma, carcinoma, dan lesi mencurigakan yang wajib diarahkan ke tenaga kesehatan.',
+            'severity_scope' => 'danger',
+            'scope_category' => 'rujuk',
+            'default_action' => 'refer',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'AAD melanoma/skin cancer: https://www.aad.org/public/diseases/skin-cancer/types/common/melanoma; CDC skin cancer symptoms: https://www.cdc.gov/skin-cancer/symptoms/index.html; DermNet A-Z lesions: https://dermnetnz.org/topics',
+            'risk_note' => 'Lesi mencurigakan perlu pemeriksaan langsung. Jangan tampilkan rekomendasi obat mandiri.',
+        ],
+        'BENIGN_LESION' => [
+            'code' => 'BENIGN_LESION',
+            'name' => 'Benign skin lesion',
+            'name_indonesian' => 'Lesi jinak kulit',
+            'clinical_group' => 'Nevus/lesi jinak/tumor jinak',
+            'description' => 'Kelompok lesi jinak seperti nevus, kista, angioma, fibroma, dan keratosis jinak yang terutama membutuhkan edukasi dan pemantauan perubahan.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'edukasi',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z benign lesions: https://dermnetnz.org/topics',
+            'risk_note' => 'Rujuk bila berubah cepat, berdarah, nyeri, tidak sembuh, atau tampak mencurigakan.',
+        ],
+        'AUTOIMMUNE_SYSTEMIC_REFER' => [
+            'code' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+            'name' => 'Autoimmune systemic and vasculitic dermatoses',
+            'name_indonesian' => 'Autoimun, sistemik, dan vaskulitis kulit',
+            'clinical_group' => 'Autoimun/sistemik/vaskulitis',
+            'description' => 'Kelompok penyakit kulit terkait autoimun, sistemik, vaskulitis, atau inflamasi serius yang memerlukan evaluasi medis.',
+            'severity_scope' => 'danger',
+            'scope_category' => 'rujuk',
+            'default_action' => 'refer',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z autoimmune, vasculitis, connective tissue diseases: https://dermnetnz.org/topics',
+            'risk_note' => 'Tidak aman untuk swamedikasi karena dapat terkait penyakit sistemik atau membutuhkan terapi resep.',
+        ],
+        'HAIR_NAIL_EXCLUDE' => [
+            'code' => 'HAIR_NAIL_EXCLUDE',
+            'name' => 'Hair and nail non-OTC scope',
+            'name_indonesian' => 'Kelainan rambut dan kuku di luar scope obat mandiri',
+            'clinical_group' => 'Rambut/kuku/non-scope obat',
+            'description' => 'Kelompok kelainan rambut atau kuku yang tidak menjadi target rekomendasi obat mandiri DermaCerdas.',
+            'severity_scope' => 'excluded',
+            'scope_category' => 'exclude',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z hair and nail conditions: https://dermnetnz.org/topics',
+            'risk_note' => 'Class ini dipakai sebagai referensi dataset/edukasi, bukan untuk rekomendasi obat OTC.',
+        ],
+        'PIGMENT_COSMETIC' => [
+            'code' => 'PIGMENT_COSMETIC',
+            'name' => 'Pigmentary cosmetic and skin care conditions',
+            'name_indonesian' => 'Pigmentasi, kosmetik, dan perawatan umum',
+            'clinical_group' => 'Pigmentasi/kosmetik/perawatan umum',
+            'description' => 'Kelompok pigmentasi, bekas, variasi normal, atau perawatan umum yang terutama membutuhkan edukasi dan perlindungan kulit.',
+            'severity_scope' => 'mild',
+            'scope_category' => 'edukasi',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z pigmentary disorders and education: https://dermnetnz.org/topics',
+            'risk_note' => 'Berikan edukasi. Rujuk bila perubahan cepat, perdarahan, nyeri, atau tanda keganasan.',
+        ],
+        'RARE_SPECIALIST_EDUCATION' => [
+            'code' => 'RARE_SPECIALIST_EDUCATION',
+            'name' => 'Rare specialist dermatoses education',
+            'name_indonesian' => 'Kelainan langka atau diagnosis spesialis',
+            'clinical_group' => 'Kelainan langka/genetik/diagnosis spesialis',
+            'description' => 'Kelompok penyakit langka, genetik, atau diagnosis spesialis yang tidak cocok untuk keputusan obat otomatis.',
+            'severity_scope' => 'moderate',
+            'scope_category' => 'edukasi',
+            'default_action' => 'educate_only',
+            'boleh_rekomendasi_obat' => false,
+            'source_note' => 'DermNet A-Z rare, genetic, systemic, and miscellaneous dermatoses: https://dermnetnz.org/topics',
+            'risk_note' => 'Berikan edukasi dan anjurkan evaluasi profesional bila keluhan aktif, luas, progresif, atau mengganggu fungsi.',
+        ],
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    private const CLASS_GROUPS = [
+        'Acne_Keloidalis_Nuchae' => 'ACNE_FOLLICULAR',
+        'Acne_Vulgaris' => 'ACNE_FOLLICULAR',
+        'Acrokeratosis_Verruciformis' => 'RARE_SPECIALIST_EDUCATION',
+        'Actinic_solar_Damage(Actinic_Cheilitis)' => 'SKIN_CANCER_REFER',
+        'Actinic_solar_Damage(Actinic_Keratosis)' => 'SKIN_CANCER_REFER',
+        'Actinic_solar_Damage(Cutis_Rhomboidalis_Nuchae)' => 'PIGMENT_COSMETIC',
+        'Actinic_solar_Damage(Pigmentation)' => 'PIGMENT_COSMETIC',
+        'Actinic_solar_Damage(Solar_Elastosis)' => 'PIGMENT_COSMETIC',
+        'Actinic_solar_Damage(Solar_Purpura)' => 'PIGMENT_COSMETIC',
+        'Actinic_solar_Damage(Telangiectasia)' => 'PIGMENT_COSMETIC',
+        'Acute_Eczema' => 'DERMATITIS_ECZEMA',
+        'Allergic_Contact_Dermatitis' => 'DERMATITIS_ECZEMA',
+        'Alopecia_Areata' => 'HAIR_NAIL_EXCLUDE',
+        'Androgenetic_Alopecia' => 'HAIR_NAIL_EXCLUDE',
+        'Angioma' => 'BENIGN_LESION',
+        'Angular_Cheilitis' => 'DERMATITIS_ECZEMA',
+        'Aphthous_Ulcer' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Apocrine_Hydrocystoma' => 'BENIGN_LESION',
+        'Arsenical_Keratosis' => 'SKIN_CANCER_REFER',
+        'Balanitis_Xerotica_Obliterans' => 'RARE_SPECIALIST_EDUCATION',
+        'Basal_Cell_Carcinoma' => 'SKIN_CANCER_REFER',
+        'Beau\'s_Lines' => 'HAIR_NAIL_EXCLUDE',
+        'Becker\'s_Nevus' => 'BENIGN_LESION',
+        'Behcet\'s_Syndrome' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Benign_Keratosis' => 'BENIGN_LESION',
+        'Blue_Nevus' => 'BENIGN_LESION',
+        'Bowen\'s_Disease' => 'SKIN_CANCER_REFER',
+        'Bowenoid_Papulosis' => 'SKIN_CANCER_REFER',
+        'Cafe_Au_Lait_Macule' => 'PIGMENT_COSMETIC',
+        'Callus' => 'DERMATITIS_ECZEMA',
+        'Candidiasis' => 'FUNGAL_SUPERFICIAL',
+        'Cellulitis' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Chalazion' => 'BENIGN_LESION',
+        'Clubbing_of_Fingers' => 'HAIR_NAIL_EXCLUDE',
+        'Compound_Nevus' => 'BENIGN_LESION',
+        'Congenital_Nevus' => 'BENIGN_LESION',
+        'Crowe\'s_Sign' => 'RARE_SPECIALIST_EDUCATION',
+        'Cutanea_Larva_Migrans' => 'RARE_SPECIALIST_EDUCATION',
+        'Cutaneous_Horn' => 'SKIN_CANCER_REFER',
+        'Cutaneous_T-Cell_Lymphoma' => 'SKIN_CANCER_REFER',
+        'Cutis_Marmorata' => 'PIGMENT_COSMETIC',
+        'Darier-White_Disease' => 'RARE_SPECIALIST_EDUCATION',
+        'Dermatofibroma' => 'BENIGN_LESION',
+        'Dermatosis_Papulosa_Nigra' => 'BENIGN_LESION',
+        'Desquamation' => 'DERMATITIS_ECZEMA',
+        'Digital_Fibroma' => 'BENIGN_LESION',
+        'Dilated_Pore_of_Winer' => 'BENIGN_LESION',
+        'Discoid_Lupus_Erythematosus' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Disseminated_Actinic_Porokeratosis' => 'SKIN_CANCER_REFER',
+        'Drug_Eruption' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Dry_Skin_Eczema' => 'DERMATITIS_ECZEMA',
+        'Dyshidrosiform_Eczema' => 'DERMATITIS_ECZEMA',
+        'Dysplastic_Nevus' => 'SKIN_CANCER_REFER',
+        'Eccrine_Poroma' => 'BENIGN_LESION',
+        'Eczema' => 'DERMATITIS_ECZEMA',
+        'Epidermal_Nevus' => 'BENIGN_LESION',
+        'Epidermoid_Cyst' => 'BENIGN_LESION',
+        'Epithelioma_Adenoides_Cysticum' => 'BENIGN_LESION',
+        'Erythema_Ab_Igne' => 'PIGMENT_COSMETIC',
+        'Erythema_Annulare_Centrifigum' => 'RARE_SPECIALIST_EDUCATION',
+        'Erythema_Craquele' => 'DERMATITIS_ECZEMA',
+        'Erythema_Multiforme' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Exfoliative_Erythroderma' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Factitial_Dermatitis' => 'DERMATITIS_ECZEMA',
+        'Favre_Racouchot' => 'PIGMENT_COSMETIC',
+        'Fibroma' => 'BENIGN_LESION',
+        'Fibroma_Molle' => 'BENIGN_LESION',
+        'Fixed_Drug_Eruption' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Follicular_Mucinosis' => 'RARE_SPECIALIST_EDUCATION',
+        'Follicular_Retention_Cyst' => 'BENIGN_LESION',
+        'Fordyce_Spots' => 'BENIGN_LESION',
+        'Frictional_Lichenoid_Dermatitis' => 'DERMATITIS_ECZEMA',
+        'Ganglion' => 'BENIGN_LESION',
+        'Geographic_Tongue' => 'PIGMENT_COSMETIC',
+        'Granulation_Tissue' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Granuloma_Annulare' => 'BENIGN_LESION',
+        'Green_Nail' => 'HAIR_NAIL_EXCLUDE',
+        'Guttate_Psoriasis' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Hailey_Hailey_Disease' => 'RARE_SPECIALIST_EDUCATION',
+        'Half_and_Half_Nail' => 'HAIR_NAIL_EXCLUDE',
+        'Halo_Nevus' => 'BENIGN_LESION',
+        'Herpes_Simplex_Virus' => 'VIRAL_REFER',
+        'Herpes_Zoster' => 'VIRAL_REFER',
+        'Hidradenitis_Suppurativa' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Histiocytosis_X' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Hyperkeratosis_Palmaris_Et_Plantaris' => 'RARE_SPECIALIST_EDUCATION',
+        'Hypertrichosis' => 'HAIR_NAIL_EXCLUDE',
+        'Ichthyosis' => 'RARE_SPECIALIST_EDUCATION',
+        'Impetigo' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Infantile_Atopic_Dermatitis' => 'DERMATITIS_ECZEMA',
+        'Inverse_Psoriasis' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Junction_Nevus' => 'BENIGN_LESION',
+        'Keloid' => 'BENIGN_LESION',
+        'Keratoacanthoma' => 'SKIN_CANCER_REFER',
+        'Keratolysis_Exfoliativa_of_Wende' => 'DERMATITIS_ECZEMA',
+        'Keratosis_Pilaris' => 'DERMATITIS_ECZEMA',
+        'Kerion' => 'FUNGAL_REFER',
+        'Koilonychia' => 'HAIR_NAIL_EXCLUDE',
+        'Kyrle\'s_Disease' => 'RARE_SPECIALIST_EDUCATION',
+        'Leiomyoma' => 'BENIGN_LESION',
+        'Lentigo_Maligna_Melanoma' => 'SKIN_CANCER_REFER',
+        'Leukocytoclastic_Vasculitis' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Leukonychia' => 'HAIR_NAIL_EXCLUDE',
+        'Lichen_Planus' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Lichen_Sclerosis_Et_Atrophicus' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Lichen_Simplex_Chronicus' => 'DERMATITIS_ECZEMA',
+        'Lichen_Spinulosis' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Linear_Epidermal_Nevus' => 'BENIGN_LESION',
+        'Lipoma' => 'BENIGN_LESION',
+        'Livedo_Reticularis' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Lymphangioma_Circumscriptum' => 'BENIGN_LESION',
+        'Lymphocytic_Infiltrate_of_Jessner' => 'RARE_SPECIALIST_EDUCATION',
+        'Lymphomatoid_Papulosis' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Mal_Perforans' => 'BACTERIAL_INFECTIOUS_REFER',
+        'Malignant_Melanoma' => 'SKIN_CANCER_REFER',
+        'Median_Nail_Dystrophy' => 'HAIR_NAIL_EXCLUDE',
+        'Melasma' => 'PIGMENT_COSMETIC',
+        'Metastatic_Carcinoma' => 'SKIN_CANCER_REFER',
+        'Milia' => 'BENIGN_LESION',
+        'Molluscum_Contagiosum' => 'VIRAL_EDUCATION',
+        'Morphea' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Mucha_Habermann_Disease' => 'AUTOIMMUNE_SYSTEMIC_REFER',
+        'Mucous_Membrane_Psoriasis' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Myxoid_Cyst' => 'BENIGN_LESION',
+        'Nail_Dystrophy' => 'HAIR_NAIL_EXCLUDE',
+        'Nail_Nevus' => 'BENIGN_LESION',
+        'Nail_Psoriasis' => 'PSORIASIS_PAPULOSQUAMOUS',
+        'Nail_Ridging' => 'HAIR_NAIL_EXCLUDE',
+        'Neurodermatitis' => 'DERMATITIS_ECZEMA',
+        'Neurofibroma' => 'BENIGN_LESION',
+        'Tinea_Corporis' => 'FUNGAL_SUPERFICIAL',
+        'Tinea_Cruris' => 'FUNGAL_SUPERFICIAL',
+        'Tinea_Pedis' => 'FUNGAL_SUPERFICIAL',
+        'Tinea_Versicolor' => 'FUNGAL_SUPERFICIAL',
+        'Urticaria' => 'DERMATITIS_ECZEMA',
+    ];
+
+    /**
+     * @return array<int, string>
+     */
+    public static function mappedClassNames(): array
+    {
+        return array_keys(self::CLASS_GROUPS);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function missingClassNames(array $classNames): array
+    {
+        return array_values(array_diff($classNames, self::mappedClassNames()));
+    }
+
+    /**
+     * @return array{disease: array<string, mixed>, mapping: array<string, mixed>}
+     */
+    public static function payloadFor(string $className): array
+    {
+        $groupKey = self::CLASS_GROUPS[$className] ?? null;
+
+        if (! $groupKey || ! isset(self::GROUPS[$groupKey])) {
+            throw new \InvalidArgumentException("Dataset class [{$className}] is not mapped.");
+        }
+
+        $group = self::GROUPS[$groupKey];
+
+        return [
+            'disease' => [
+                'code' => $group['code'],
+                'name' => $group['name'],
+                'slug' => Str::slug($group['code']),
+                'name_indonesian' => $group['name_indonesian'],
+                'description' => $group['description'],
+                'source_note' => $group['source_note'],
+                'severity_scope' => $group['severity_scope'],
+                'default_action' => $group['default_action'],
+                'is_active' => true,
+            ],
+            'mapping' => [
+                'nama_indonesia' => self::humanizeClassName($className),
+                'clinical_group' => $group['clinical_group'],
+                'scope_category' => $group['scope_category'],
+                'boleh_rekomendasi_obat' => $group['boleh_rekomendasi_obat'],
+                'default_action' => $group['default_action'],
+                'risk_note' => $group['risk_note'],
+                'source_note' => $group['source_note'],
+            ],
+        ];
+    }
+
+    private static function humanizeClassName(string $className): string
+    {
+        return Str::of($className)
+            ->replace(['_', '(', ')'], [' ', ' (', ')'])
+            ->replaceMatches('/\s+/', ' ')
+            ->trim()
+            ->title()
+            ->toString();
+    }
+}
