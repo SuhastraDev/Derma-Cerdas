@@ -41,7 +41,7 @@ jobs:
             npm run build
 
             php artisan migrate --force
-            php artisan storage:link || true
+            php artisan storage:link --force
             php artisan optimize:clear
             php artisan config:cache
             php artisan route:cache
@@ -56,6 +56,19 @@ jobs:
             sudo systemctl restart dermacerdas-worker
             sudo systemctl reload nginx
 
-            curl -fsS http://127.0.0.1:8001/health
+            for attempt in {1..20}; do
+              if curl -fsS http://127.0.0.1:8001/health; then
+                break
+              fi
+
+              if [ "$attempt" -eq 20 ]; then
+                sudo systemctl status dermacerdas-ai --no-pager
+                sudo journalctl -u dermacerdas-ai -n 80 --no-pager
+                exit 1
+              fi
+
+              sleep 2
+            done
+
             curl -fsSI http://127.0.0.1
           EOF
