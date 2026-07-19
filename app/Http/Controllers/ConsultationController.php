@@ -270,9 +270,29 @@ class ConsultationController extends Controller
 
     private function isReadableDatasetImage(string $path): bool
     {
-        return is_file($path)
-            && preg_match('/\.(jpg|jpeg|png|webp)$/i', $path)
-            && filesize($path) > 0
-            && @getimagesize($path) !== false;
+        if (! is_file($path) || filesize($path) <= 0 || ! preg_match('/\.(jpg|jpeg|png|webp)$/i', $path)) {
+            return false;
+        }
+
+        $imageInfo = @getimagesize($path);
+
+        if ($imageInfo === false) {
+            return false;
+        }
+
+        $image = match ($imageInfo['mime'] ?? '') {
+            'image/jpeg' => @imagecreatefromjpeg($path),
+            'image/png' => @imagecreatefrompng($path),
+            'image/webp' => @imagecreatefromwebp($path),
+            default => false,
+        };
+
+        if ($image === false) {
+            return false;
+        }
+
+        imagedestroy($image);
+
+        return true;
     }
 }
