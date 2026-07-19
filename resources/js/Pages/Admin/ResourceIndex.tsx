@@ -1,9 +1,12 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router, useForm } from '@inertiajs/react';
 import {
+    ChevronLeft,
+    ChevronRight,
     ExternalLink,
     Eye,
     FileText,
+    Filter,
     Image,
     Pencil,
     Plus,
@@ -76,6 +79,7 @@ type DatasetDetail = {
         url: string;
     }>;
 };
+type DatasetSampleImage = NonNullable<DatasetDetail['sample_images']>[number];
 type KnowledgeDetail = {
     title?: string | null;
     dataset?: DatasetDetail | null;
@@ -276,6 +280,8 @@ function percent(value?: number): string {
     return `${Math.round((value ?? 0) * 100)}%`;
 }
 
+const pageSize = 25;
+
 export default function ResourceIndex({
     resource,
     title,
@@ -292,22 +298,79 @@ export default function ResourceIndex({
     const [selectedItem, setSelectedItem] = useState<Item | null>(null);
     const [datasetImages, setDatasetImages] = useState<File[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [scopeFilter, setScopeFilter] = useState('');
+    const [actionFilter, setActionFilter] = useState('');
+    const [medicineFilter, setMedicineFilter] = useState('');
+    const [relationFilter, setRelationFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
     const { data, setData, post, put, processing, errors, reset } =
         useForm<FormData>(initialData);
 
     const filteredItems = useMemo(() => {
         const query = searchTerm.trim().toLowerCase();
 
-        if (!query) {
-            return items;
-        }
+        return items.filter((item) => {
+            const matchesSearch =
+                !query ||
+                columns.some((column) =>
+                    displayValue(item[column]).toLowerCase().includes(query),
+                );
 
-        return items.filter((item) =>
-            columns.some((column) =>
-                displayValue(item[column]).toLowerCase().includes(query),
+            if (resource !== 'dataset-mappings') {
+                return matchesSearch;
+            }
+
+            const matchesDatasetFilters =
+                (!scopeFilter || item.scope_category === scopeFilter) &&
+                (!actionFilter || item.default_action === actionFilter) &&
+                (!medicineFilter ||
+                    String(Boolean(item.boleh_rekomendasi_obat)) ===
+                        medicineFilter) &&
+                (!relationFilter ||
+                    (relationFilter === 'linked'
+                        ? Boolean(item.disease_name)
+                        : !item.disease_name));
+
+            return matchesSearch && matchesDatasetFilters;
+        });
+    }, [
+        actionFilter,
+        columns,
+        items,
+        medicineFilter,
+        relationFilter,
+        resource,
+        scopeFilter,
+        searchTerm,
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+    const activePage = Math.min(currentPage, totalPages);
+    const paginatedItems = useMemo(
+        () =>
+            filteredItems.slice(
+                (activePage - 1) * pageSize,
+                activePage * pageSize,
             ),
-        );
-    }, [columns, items, searchTerm]);
+        [activePage, filteredItems],
+    );
+    const firstItemNumber =
+        filteredItems.length === 0 ? 0 : (activePage - 1) * pageSize + 1;
+    const lastItemNumber = Math.min(activePage * pageSize, filteredItems.length);
+    const showDatasetFilters = resource === 'dataset-mappings';
+
+    const updateSearch = (value: string) => {
+        setSearchTerm(value);
+        setCurrentPage(1);
+    };
+
+    const updateDatasetFilter = (
+        setter: (value: string) => void,
+        value: string,
+    ) => {
+        setter(value);
+        setCurrentPage(1);
+    };
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -441,7 +504,7 @@ export default function ResourceIndex({
                                     <input
                                         value={searchTerm}
                                         onChange={(event) =>
-                                            setSearchTerm(event.target.value)
+                                            updateSearch(event.target.value)
                                         }
                                         placeholder={`Cari ${title.toLowerCase()}...`}
                                         className="w-full border-0 bg-transparent px-0 py-2 text-sm text-[#1b2124] placeholder:text-[#9caeb8] focus:ring-0"
@@ -451,6 +514,116 @@ export default function ResourceIndex({
                         </div>
                     </div>
                 </div>
+
+                {showDatasetFilters && (
+                    <div className="rounded-lg border border-[#dbe6eb] bg-white p-5 shadow-sm">
+                        <div className="mb-4 flex items-start gap-3">
+                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#eaf6ff] text-[#3385f0]">
+                                <Filter className="h-5 w-5" />
+                            </span>
+                            <div>
+                                <h2 className="text-base font-bold text-[#1b2124]">
+                                    Filter dataset
+                                </h2>
+                                <p className="mt-1 text-sm leading-6 text-[#77878f]">
+                                    Saring berdasarkan scope, arahan, rekomendasi obat, dan relasi penyakit agar review 130 class lebih cepat.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-4">
+                            <label>
+                                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                    Kategori penggunaan
+                                </span>
+                                <select
+                                    value={scopeFilter}
+                                    onChange={(event) =>
+                                        updateDatasetFilter(
+                                            setScopeFilter,
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm focus:border-[#3385f0] focus:ring-[#3385f0]"
+                                >
+                                    <option value="">Semua kategori</option>
+                                    {(options.scopeCategories ?? []).map((option) =>
+                                        typeof option === 'string' ? (
+                                            <option key={option} value={option}>
+                                                {optionLabel(option)}
+                                            </option>
+                                        ) : null,
+                                    )}
+                                </select>
+                            </label>
+
+                            <label>
+                                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                    Arahan default
+                                </span>
+                                <select
+                                    value={actionFilter}
+                                    onChange={(event) =>
+                                        updateDatasetFilter(
+                                            setActionFilter,
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm focus:border-[#3385f0] focus:ring-[#3385f0]"
+                                >
+                                    <option value="">Semua arahan</option>
+                                    {(options.actions ?? []).map((option) =>
+                                        typeof option === 'string' ? (
+                                            <option key={option} value={option}>
+                                                {optionLabel(option)}
+                                            </option>
+                                        ) : null,
+                                    )}
+                                </select>
+                            </label>
+
+                            <label>
+                                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                    Rekomendasi obat
+                                </span>
+                                <select
+                                    value={medicineFilter}
+                                    onChange={(event) =>
+                                        updateDatasetFilter(
+                                            setMedicineFilter,
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm focus:border-[#3385f0] focus:ring-[#3385f0]"
+                                >
+                                    <option value="">Semua status</option>
+                                    <option value="true">Boleh rekomendasi</option>
+                                    <option value="false">Tidak rekomendasi</option>
+                                </select>
+                            </label>
+
+                            <label>
+                                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-[#77878f]">
+                                    Relasi penyakit
+                                </span>
+                                <select
+                                    value={relationFilter}
+                                    onChange={(event) =>
+                                        updateDatasetFilter(
+                                            setRelationFilter,
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="min-h-11 w-full rounded-lg border-[#dbe6eb] bg-[#f7fafc] text-sm text-[#1b2124] shadow-sm focus:border-[#3385f0] focus:ring-[#3385f0]"
+                                >
+                                    <option value="">Semua relasi</option>
+                                    <option value="linked">Sudah terhubung</option>
+                                    <option value="unlinked">Belum terhubung</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+                )}
 
                     {!readOnly && isFormOpen && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1b2124]/55 p-4 backdrop-blur-sm">
@@ -642,7 +815,7 @@ export default function ResourceIndex({
                                     Daftar {title.toLowerCase()}
                                 </h2>
                                 <p className="mt-1 text-sm text-[#77878f]">
-                                    Menampilkan {filteredItems.length} dari {items.length} data.
+                                    Menampilkan {firstItemNumber}-{lastItemNumber} dari {filteredItems.length} data tersaring.
                                 </p>
                             </div>
                             {readOnly && (
@@ -682,7 +855,7 @@ export default function ResourceIndex({
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredItems.map((item) => (
+                                        paginatedItems.map((item) => (
                                             <tr
                                                 key={String(item.id)}
                                                 className="transition hover:bg-[#f7fafc]"
@@ -747,6 +920,39 @@ export default function ResourceIndex({
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                        <div className="flex flex-col gap-3 border-t border-[#dbe6eb] bg-[#f7fafc] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-[#77878f]">
+                                Halaman {activePage} dari {totalPages} / 25 data per halaman
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setCurrentPage((page) =>
+                                            Math.max(1, page - 1),
+                                        )
+                                    }
+                                    disabled={activePage === 1}
+                                    className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6eb] bg-white px-3 text-sm font-bold text-[#4d595e] transition hover:bg-[#ebf2f5] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                    Sebelumnya
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setCurrentPage((page) =>
+                                            Math.min(totalPages, page + 1),
+                                        )
+                                    }
+                                    disabled={activePage === totalPages}
+                                    className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#3385f0] px-3 text-sm font-bold text-white transition hover:bg-[#2b71cc] disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Berikutnya
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </div>
                         </div>
                     </div>
             </section>
@@ -1004,16 +1210,10 @@ export default function ResourceIndex({
                                     {(selectedDatasetDetail.sample_images ?? []).length > 0 ? (
                                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                             {selectedDatasetDetail.sample_images?.map((image) => (
-                                                <figure key={`${image.class_name}-${image.file_name}`} className="rounded-lg border border-[#dbe6eb] bg-white p-2">
-                                                    <img
-                                                        src={image.url}
-                                                        alt={`Contoh dataset ${image.class_name}`}
-                                                        className="aspect-[4/3] w-full rounded-md object-cover"
-                                                    />
-                                                    <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
-                                                        {image.file_name}
-                                                    </figcaption>
-                                                </figure>
+                                                <DatasetSampleFigure
+                                                    key={`${image.class_name}-${image.file_name}`}
+                                                    image={image}
+                                                />
                                             ))}
                                         </div>
                                     ) : (
@@ -1179,16 +1379,10 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
                     {(dataset.sample_images ?? []).length > 0 ? (
                         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {dataset.sample_images?.slice(0, 6).map((image) => (
-                                <figure key={`${image.class_name}-${image.file_name}`} className="rounded-lg border border-[#dbe6eb] bg-white p-2">
-                                    <img
-                                        src={image.url}
-                                        alt={`Contoh dataset ${image.class_name}`}
-                                        className="aspect-[4/3] w-full rounded-md object-cover"
-                                    />
-                                    <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
-                                        {image.file_name}
-                                    </figcaption>
-                                </figure>
+                                <DatasetSampleFigure
+                                    key={`${image.class_name}-${image.file_name}`}
+                                    image={image}
+                                />
                             ))}
                         </div>
                     ) : (
@@ -1199,5 +1393,33 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
                 <EmptyNote text="Elemen ini belum dihubungkan ke dataset. Pilih dataset agar knowledge base tidak berdiri sendiri." />
             )}
         </DetailSection>
+    );
+}
+
+function DatasetSampleFigure({ image }: { image: DatasetSampleImage }) {
+    const [failed, setFailed] = useState(false);
+
+    return (
+        <figure className="rounded-lg border border-[#dbe6eb] bg-white p-2">
+            {failed ? (
+                <div className="flex aspect-[4/3] w-full flex-col items-center justify-center rounded-md border border-dashed border-[#c3d3db] bg-[#f7fafc] px-3 text-center">
+                    <Image className="h-6 w-6 text-[#9caeb8]" />
+                    <p className="mt-2 text-xs font-semibold leading-5 text-[#77878f]">
+                        File gambar tidak bisa dibaca
+                    </p>
+                </div>
+            ) : (
+                <img
+                    src={image.url}
+                    alt={`Contoh dataset ${image.class_name}`}
+                    onError={() => setFailed(true)}
+                    className="aspect-[4/3] w-full rounded-md object-cover"
+                    loading="lazy"
+                />
+            )}
+            <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
+                {image.file_name}
+            </figcaption>
+        </figure>
     );
 }

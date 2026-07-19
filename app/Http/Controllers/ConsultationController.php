@@ -254,7 +254,7 @@ class ConsultationController extends Controller
         }
 
         $files = collect(scandir($directory) ?: [])
-            ->filter(fn (string $file): bool => is_file($directory.DIRECTORY_SEPARATOR.$file) && preg_match('/\.(jpg|jpeg|png|webp)$/i', $file))
+            ->filter(fn (string $file): bool => $this->isReadableDatasetImage($directory.DIRECTORY_SEPARATOR.$file))
             ->sort(SORT_NATURAL | SORT_FLAG_CASE)
             ->take(3)
             ->values();
@@ -266,5 +266,13 @@ class ConsultationController extends Controller
                 'url' => route('dataset.example-image', [$className, $file]),
             ])
             ->all();
+    }
+
+    private function isReadableDatasetImage(string $path): bool
+    {
+        return is_file($path)
+            && preg_match('/\.(jpg|jpeg|png|webp)$/i', $path)
+            && filesize($path) > 0
+            && @getimagesize($path) !== false;
     }
 }
