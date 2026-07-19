@@ -333,6 +333,7 @@ class KnowledgeBaseController extends Controller
 
         if ($item instanceof DatasetClassMapping) {
             $data['disease_name'] = $item->disease?->name;
+            $datasetImages = $this->datasetImages($item);
             $data['detail'] = [
                 'dataset_class_id' => $item->dataset_class_id,
                 'dataset_class_name' => $item->dataset_class_name,
@@ -342,7 +343,9 @@ class KnowledgeBaseController extends Controller
                 'default_action' => $item->default_action,
                 'disease_name' => $item->disease?->name_indonesian ?: $item->disease?->name,
                 'risk_note' => $item->risk_note,
-                'sample_images' => $this->datasetSampleImages($item),
+                'sample_images' => array_slice($datasetImages, 0, 6),
+                'all_images' => $datasetImages,
+                'image_count' => count($datasetImages),
             ];
         }
 
@@ -465,7 +468,7 @@ class KnowledgeBaseController extends Controller
     /**
      * @return array<int, array{class_name: string, file_name: string, url: string}>
      */
-    private function datasetSampleImages(DatasetClassMapping $mapping): array
+    private function datasetImages(DatasetClassMapping $mapping): array
     {
         $className = $mapping->dataset_class_name;
         $directory = base_path('datasets/sd-198/images/'.$className);
@@ -477,7 +480,6 @@ class KnowledgeBaseController extends Controller
         return collect(scandir($directory) ?: [])
             ->filter(fn (string $file): bool => $this->isReadableDatasetImage($directory.DIRECTORY_SEPARATOR.$file))
             ->sort(SORT_NATURAL | SORT_FLAG_CASE)
-            ->take(6)
             ->map(fn (string $file): array => [
                 'class_name' => $className,
                 'file_name' => $file,
@@ -485,6 +487,14 @@ class KnowledgeBaseController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, array{class_name: string, file_name: string, url: string}>
+     */
+    private function datasetSampleImages(DatasetClassMapping $mapping): array
+    {
+        return array_slice($this->datasetImages($mapping), 0, 6);
     }
 
     private function isReadableDatasetImage(string $path): bool
@@ -501,6 +511,8 @@ class KnowledgeBaseController extends Controller
             return null;
         }
 
+        $datasetImages = $this->datasetImages($mapping);
+
         return [
             'dataset_class_id' => $mapping->dataset_class_id,
             'dataset_class_name' => $mapping->dataset_class_name,
@@ -510,7 +522,9 @@ class KnowledgeBaseController extends Controller
             'default_action' => $mapping->default_action,
             'disease_name' => $mapping->disease?->name_indonesian ?: $mapping->disease?->name,
             'risk_note' => $mapping->risk_note,
-            'sample_images' => $this->datasetSampleImages($mapping),
+            'sample_images' => array_slice($datasetImages, 0, 6),
+            'all_images' => $datasetImages,
+            'image_count' => count($datasetImages),
         ];
     }
 
