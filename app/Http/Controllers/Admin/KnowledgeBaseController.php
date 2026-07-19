@@ -13,6 +13,7 @@ use App\Models\RedFlag;
 use App\Models\Setting;
 use App\Models\Symptom;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -47,6 +48,13 @@ class KnowledgeBaseController extends Controller
             'items' => $items,
             'options' => $this->options(),
             'readOnly' => $config['read_only'] ?? false,
+        ]);
+    }
+
+    public function datasetMappingImages(DatasetClassMapping $datasetMapping): JsonResponse
+    {
+        return response()->json([
+            'images' => $this->datasetImages($datasetMapping),
         ]);
     }
 
@@ -333,8 +341,8 @@ class KnowledgeBaseController extends Controller
 
         if ($item instanceof DatasetClassMapping) {
             $data['disease_name'] = $item->disease?->name;
-            $datasetImages = $this->datasetImages($item);
             $data['detail'] = [
+                'id' => $item->id,
                 'dataset_class_id' => $item->dataset_class_id,
                 'dataset_class_name' => $item->dataset_class_name,
                 'nama_indonesia' => $item->nama_indonesia,
@@ -343,9 +351,8 @@ class KnowledgeBaseController extends Controller
                 'default_action' => $item->default_action,
                 'disease_name' => $item->disease?->name_indonesian ?: $item->disease?->name,
                 'risk_note' => $item->risk_note,
-                'sample_images' => array_slice($datasetImages, 0, 6),
-                'all_images' => $datasetImages,
-                'image_count' => count($datasetImages),
+                'sample_images' => $this->datasetSampleImages($item),
+                'image_count' => $this->datasetImageCount($item),
             ];
         }
 
@@ -494,7 +501,37 @@ class KnowledgeBaseController extends Controller
      */
     private function datasetSampleImages(DatasetClassMapping $mapping): array
     {
-        return array_slice($this->datasetImages($mapping), 0, 6);
+        $className = $mapping->dataset_class_name;
+        $directory = base_path('datasets/sd-198/images/'.$className);
+
+        if (! is_dir($directory)) {
+            return [];
+        }
+
+        return collect(scandir($directory) ?: [])
+            ->filter(fn (string $file): bool => $this->isReadableDatasetImage($directory.DIRECTORY_SEPARATOR.$file))
+            ->sort(SORT_NATURAL | SORT_FLAG_CASE)
+            ->take(6)
+            ->map(fn (string $file): array => [
+                'class_name' => $className,
+                'file_name' => $file,
+                'url' => route('dataset.example-image', [$className, $file]),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function datasetImageCount(DatasetClassMapping $mapping): int
+    {
+        $directory = base_path('datasets/sd-198/images/'.$mapping->dataset_class_name);
+
+        if (! is_dir($directory)) {
+            return 0;
+        }
+
+        return collect(scandir($directory) ?: [])
+            ->filter(fn (string $file): bool => is_file($directory.DIRECTORY_SEPARATOR.$file) && preg_match('/\.(jpg|jpeg|png|webp)$/i', $file))
+            ->count();
     }
 
     private function isReadableDatasetImage(string $path): bool
@@ -531,9 +568,8 @@ class KnowledgeBaseController extends Controller
             return null;
         }
 
-        $datasetImages = $this->datasetImages($mapping);
-
         return [
+            'id' => $mapping->id,
             'dataset_class_id' => $mapping->dataset_class_id,
             'dataset_class_name' => $mapping->dataset_class_name,
             'nama_indonesia' => $mapping->nama_indonesia,
@@ -542,9 +578,8 @@ class KnowledgeBaseController extends Controller
             'default_action' => $mapping->default_action,
             'disease_name' => $mapping->disease?->name_indonesian ?: $mapping->disease?->name,
             'risk_note' => $mapping->risk_note,
-            'sample_images' => array_slice($datasetImages, 0, 6),
-            'all_images' => $datasetImages,
-            'image_count' => count($datasetImages),
+            'sample_images' => $this->datasetSampleImages($mapping),
+            'image_count' => $this->datasetImageCount($mapping),
         ];
     }
 

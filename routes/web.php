@@ -31,6 +31,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::prefix('admin')->name('admin.')->group(function () {
+        Route::get('/dataset-mappings/{datasetMapping}/images', [KnowledgeBaseController::class, 'datasetMappingImages'])->name('dataset-mappings.images');
         Route::get('/{resource}', [KnowledgeBaseController::class, 'index'])->name('resource.index');
         Route::post('/{resource}', [KnowledgeBaseController::class, 'store'])->name('resource.store');
         Route::put('/{resource}/{id}', [KnowledgeBaseController::class, 'update'])->name('resource.update');

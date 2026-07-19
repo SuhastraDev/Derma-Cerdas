@@ -65,6 +65,7 @@ type ConsultationDetail = {
     }>;
 };
 type DatasetDetail = {
+    id?: number;
     dataset_class_id?: number;
     dataset_class_name?: string;
     nama_indonesia?: string | null;
@@ -313,6 +314,9 @@ export default function ResourceIndex({
     const [galleryDataset, setGalleryDataset] = useState<DatasetDetail | null>(
         null,
     );
+    const [galleryImages, setGalleryImages] = useState<DatasetSampleImage[]>([]);
+    const [galleryLoading, setGalleryLoading] = useState(false);
+    const [galleryError, setGalleryError] = useState('');
     const [galleryPage, setGalleryPage] = useState(1);
     const { data, setData, post, put, processing, errors, reset } =
         useForm<FormData>(initialData);
@@ -458,7 +462,6 @@ export default function ResourceIndex({
     const selectedDatasetDetail = selectedItem?.detail as DatasetDetail | undefined;
     const selectedKnowledgeDetail = selectedItem?.detail as KnowledgeDetail | undefined;
     const showDetailActions = ['consultations', 'dataset-mappings', 'diseases', 'medicines', 'recommendations'].includes(resource);
-    const galleryImages = galleryDataset?.all_images ?? [];
     const galleryTotalPages = Math.max(
         1,
         Math.ceil(galleryImages.length / galleryPageSize),
@@ -468,9 +471,42 @@ export default function ResourceIndex({
         (activeGalleryPage - 1) * galleryPageSize,
         activeGalleryPage * galleryPageSize,
     );
-    const openDatasetGallery = (dataset: DatasetDetail) => {
+    const openDatasetGallery = async (dataset: DatasetDetail) => {
         setGalleryDataset(dataset);
+        setGalleryImages([]);
+        setGalleryError('');
+        setGalleryLoading(true);
         setGalleryPage(1);
+
+        if (!dataset.id) {
+            setGalleryImages(dataset.sample_images ?? []);
+            setGalleryLoading(false);
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                route('admin.dataset-mappings.images', dataset.id),
+                {
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error('Gagal memuat galeri dataset.');
+            }
+
+            const payload = (await response.json()) as {
+                images?: DatasetSampleImage[];
+            };
+            setGalleryImages(payload.images ?? []);
+        } catch {
+            setGalleryError('Galeri gagal dimuat. Coba refresh halaman atau cek file dataset.');
+        } finally {
+            setGalleryLoading(false);
+        }
     };
 
     return (
@@ -1381,7 +1417,9 @@ export default function ResourceIndex({
                                     {galleryDataset.dataset_class_name ?? '-'}
                                 </h2>
                                 <p className="mt-1 text-sm text-[#77878f]">
-                                    {galleryImages.length} gambar terbaca / tampil {galleryPageSize} per halaman.
+                                    {galleryLoading
+                                        ? 'Memuat daftar gambar...'
+                                        : `${galleryImages.length} gambar terbaca / tampil ${galleryPageSize} per halaman.`}
                                 </p>
                             </div>
                             <button
@@ -1394,7 +1432,11 @@ export default function ResourceIndex({
                         </div>
 
                         <div className="max-h-[calc(94vh-172px)] overflow-y-auto p-5">
-                            {paginatedGalleryImages.length > 0 ? (
+                            {galleryLoading ? (
+                                <EmptyNote text="Sedang memuat galeri dataset..." />
+                            ) : galleryError ? (
+                                <EmptyNote text={galleryError} />
+                            ) : paginatedGalleryImages.length > 0 ? (
                                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
                                     {paginatedGalleryImages.map((image) => (
                                         <DatasetSampleFigure
