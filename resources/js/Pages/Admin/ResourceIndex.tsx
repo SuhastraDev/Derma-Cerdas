@@ -78,6 +78,7 @@ type DatasetDetail = {
         class_name: string;
         file_name: string;
         url: string;
+        thumb_url?: string;
     }>;
     image_count?: number;
 };
@@ -1487,24 +1488,20 @@ function DatasetPanel({ dataset }: { dataset: DatasetDetail | null }) {
 function DatasetSampleFigure({ image }: { image: DatasetSampleImage }) {
     const [failed, setFailed] = useState(false);
 
+    if (failed) {
+        return null;
+    }
+
     return (
         <figure className="rounded-lg border border-[#dbe6eb] bg-white p-2">
-            {failed ? (
-                <div className="flex aspect-[4/3] w-full flex-col items-center justify-center rounded-md border border-dashed border-[#c3d3db] bg-[#f7fafc] px-3 text-center">
-                    <Image className="h-6 w-6 text-[#9caeb8]" />
-                    <p className="mt-2 text-xs font-semibold leading-5 text-[#77878f]">
-                        File gambar tidak bisa dibaca
-                    </p>
-                </div>
-            ) : (
-                <img
-                    src={image.url}
-                    alt={`Contoh dataset ${image.class_name}`}
-                    onError={() => setFailed(true)}
-                    className="aspect-[4/3] w-full rounded-md object-cover"
-                    loading="lazy"
-                />
-            )}
+            <img
+                src={image.thumb_url ?? image.url}
+                alt={`Contoh dataset ${image.class_name}`}
+                onError={() => setFailed(true)}
+                className="aspect-[4/3] w-full rounded-md object-cover"
+                loading="lazy"
+                decoding="async"
+            />
             <figcaption className="mt-2 break-words text-xs leading-5 text-[#4d595e]">
                 {image.file_name}
             </figcaption>

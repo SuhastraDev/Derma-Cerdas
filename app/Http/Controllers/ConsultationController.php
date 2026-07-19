@@ -209,7 +209,7 @@ class ConsultationController extends Controller
             ->header('Content-Type', 'text/html; charset=UTF-8');
     }
 
-    public function datasetExampleImage(string $className, string $fileName): BinaryFileResponse
+    public function datasetExampleImage(Request $request, string $className, string $fileName): BinaryFileResponse|HttpResponse
     {
         abort_unless(preg_match('/^[A-Za-z0-9_().-]+$/', $className), 404);
         abort_unless(preg_match('/^[A-Za-z0-9_.-]+$/', $fileName), 404);
@@ -221,7 +221,69 @@ class ConsultationController extends Controller
 
         abort_unless($realBase && $realPath && str_starts_with($realPath, $realBase), 404);
 
-        return response()->file($realPath);
+        if ($request->boolean('thumb')) {
+            return $this->datasetThumbnailResponse($realPath);
+        }
+
+        return response()->file($realPath, [
+            'Cache-Control' => 'public, max-age=604800',
+        ]);
+    }
+
+    private function datasetThumbnailResponse(string $path): HttpResponse
+    {
+        $imageInfo = @getimagesize($path);
+        abort_if($imageInfo === false, 404);
+
+        $decoder = match ($imageInfo['mime'] ?? '') {
+            'image/jpeg' => 'imagecreatefromjpeg',
+            'image/png' => 'imagecreatefrompng',
+            'image/webp' => 'imagecreatefromwebp',
+            default => null,
+        };
+
+        if (! $decoder || ! function_exists($decoder) || ! function_exists('imagecreatetruecolor')) {
+            return response()->file($path, [
+                'Cache-Control' => 'public, max-age=604800',
+            ]);
+        }
+
+        $source = @$decoder($path);
+
+        abort_if($source === false, 404);
+
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        $targetWidth = min(420, $sourceWidth);
+        $targetHeight = max(1, (int) round($sourceHeight * ($targetWidth / max(1, $sourceWidth))));
+        $target = imagecreatetruecolor($targetWidth, $targetHeight);
+
+        imagecopyresampled(
+            $target,
+            $source,
+            0,
+            0,
+            0,
+            0,
+            $targetWidth,
+            $targetHeight,
+            $sourceWidth,
+            $sourceHeight
+        );
+
+        ob_start();
+        imagejpeg($target, null, 78);
+        $binary = ob_get_clean();
+
+        imagedestroy($source);
+        imagedestroy($target);
+
+        abort_if($binary === false, 404);
+
+        return response($binary, 200, [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'public, max-age=604800',
+        ]);
     }
 
     private function sessionCodeExists(string $sessionCode): bool
@@ -280,12 +342,18 @@ class ConsultationController extends Controller
             return false;
         }
 
-        $image = match ($imageInfo['mime'] ?? '') {
-            'image/jpeg' => @imagecreatefromjpeg($path),
-            'image/png' => @imagecreatefrompng($path),
-            'image/webp' => @imagecreatefromwebp($path),
-            default => false,
+        $decoder = match ($imageInfo['mime'] ?? '') {
+            'image/jpeg' => 'imagecreatefromjpeg',
+            'image/png' => 'imagecreatefrompng',
+            'image/webp' => 'imagecreatefromwebp',
+            default => null,
         };
+
+        if (! $decoder || ! function_exists($decoder)) {
+            return true;
+        }
+
+        $image = @$decoder($path);
 
         if ($image === false) {
             return false;

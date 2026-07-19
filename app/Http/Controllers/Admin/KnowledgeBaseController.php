@@ -521,6 +521,7 @@ class KnowledgeBaseController extends Controller
                 'class_name' => $className,
                 'file_name' => $file,
                 'url' => route('dataset.example-image', [$className, $file]),
+                'thumb_url' => route('dataset.example-image', [$className, $file]).'?thumb=1',
             ];
 
             if (count($images) >= 6) {
@@ -556,12 +557,18 @@ class KnowledgeBaseController extends Controller
             return false;
         }
 
-        $image = match ($imageInfo['mime'] ?? '') {
-            'image/jpeg' => @imagecreatefromjpeg($path),
-            'image/png' => @imagecreatefrompng($path),
-            'image/webp' => @imagecreatefromwebp($path),
-            default => false,
+        $decoder = match ($imageInfo['mime'] ?? '') {
+            'image/jpeg' => 'imagecreatefromjpeg',
+            'image/png' => 'imagecreatefrompng',
+            'image/webp' => 'imagecreatefromwebp',
+            default => null,
         };
+
+        if (! $decoder || ! function_exists($decoder)) {
+            return true;
+        }
+
+        $image = @$decoder($path);
 
         if ($image === false) {
             return false;
