@@ -62,6 +62,39 @@ class GeminiVisualClient:
 
         return self.response_from_text(text)
 
+    def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
+        if settings.ai_mock_mode or not settings.gemini_api_key:
+            return {
+                "is_valid_skin_image": False,
+                "warnings": ["AI_MOCK_MODE aktif; filter kulit tidak dijalankan."],
+                "raw_response": {"mode": "mock"},
+            }
+
+        try:
+            from google import genai
+        except ImportError as exc:
+            raise RuntimeError("Package google-genai belum terinstall.") from exc
+
+        raw = ImageValidator().decode_base64(image_base64)
+        image = Image.open(BytesIO(raw))
+        client = genai.Client(api_key=settings.gemini_api_key)
+
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model_name,
+                contents=[self.skin_filter_prompt(), image],
+            )
+        except Exception as exc:
+            return {
+                "is_valid_skin_image": False,
+                "warnings": [f"Gemini skin filter gagal: {exc}"],
+                "raw_response": {"error": str(exc), "model": settings.gemini_model_name},
+            }
+
+        text = getattr(response, "text", "") or ""
+
+        return self.skin_filter_response_from_text(text)
+
     def response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
 
@@ -110,6 +143,34 @@ class GeminiVisualClient:
             return 0.0
 
         return max(0.0, min(1.0, score))
+
+    def skin_filter_prompt(self) -> str:
+        return (
+            "Anda hanya bertugas memfilter apakah gambar berisi area kulit/tubuh manusia. "
+            "Jangan menilai penyakit dan jangan butuh lesi yang jelas. "
+            "Jawab true jika terlihat kulit manusia atau bagian tubuh manusia seperti tangan, kaki, wajah, leher, lengan, paha, "
+            "punggung, perut, bokong, kulit kepala, kuku, atau lipatan tubuh, termasuk bila ada bercak putih/cokelat, ruam, luka, "
+            "blur ringan, crop close-up, atau pencahayaan kurang ideal. "
+            "Jawab false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, layar, pemandangan, "
+            "atau file tidak dapat dinilai. "
+            "Balas hanya JSON valid: "
+            '{"is_valid_skin_image": true, "skin_evidence_score": 0.0, "warnings": []}.'
+        )
+
+    def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
+        parsed = self.parse_json_text(text)
+        skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
+        is_valid_skin_image = bool(parsed.get("is_valid_skin_image", False)) or skin_evidence_score >= 0.35
+
+        return {
+            "is_valid_skin_image": is_valid_skin_image,
+            "warnings": parsed.get("warnings", []),
+            "raw_response": {
+                "text": text,
+                "model": settings.gemini_model_name,
+                "skin_evidence_score": skin_evidence_score,
+            },
+        }
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
         cleaned = text.strip()
