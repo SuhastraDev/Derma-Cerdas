@@ -96,6 +96,7 @@ class ConsultationWorkflowService
                     'complaint_summary' => $complaintFeatures['summary'] ?? [],
                     'visual_validation' => [
                         'provider' => $visualAnalysis['provider'],
+                        'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
                         'status' => $visualAnalysis['validation_status'],
                         'is_valid_skin_image' => $visualAnalysis['is_valid_skin_image'],
                         'warnings' => $visualAnalysis['warnings'],
@@ -108,10 +109,14 @@ class ConsultationWorkflowService
     }
 
     /**
-     * @param  array{validation_status: string, warnings: array<int, string>}  $visualAnalysis
+     * @param  array{provider_status?: string, validation_status: string, warnings: array<int, string>}  $visualAnalysis
      */
     private function visualValidationMessage(array $visualAnalysis): string
     {
+        if (($visualAnalysis['provider_status'] ?? null) === 'quota_exceeded') {
+            return 'Kuota analisis visual Gemini sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan kuota aktif.';
+        }
+
         if ($visualAnalysis['validation_status'] === 'not_configured') {
             return 'Validasi visual AI belum aktif, sehingga foto belum bisa dipastikan sebagai area kulit. Aktifkan AI service sebelum menjalankan analisis foto.';
         }

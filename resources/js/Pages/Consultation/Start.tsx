@@ -41,6 +41,7 @@ type PrecheckResult = {
     complaint_summary: string[];
     visual: {
         status: string;
+        provider_status: string;
         is_valid_skin_image: boolean | null;
         warnings: string[];
         candidates: Array<{
@@ -355,6 +356,20 @@ export default function Start({ symptoms, redFlags }: StartProps) {
 
             if (!response.ok) {
                 throw new Error(body.message ?? 'Precheck belum berhasil. Periksa foto dan keluhan.');
+            }
+
+            if (body.visual?.status === 'unavailable') {
+                throw new Error(
+                    body.visual.warnings?.[0] ??
+                        'Layanan analisis visual sedang tidak tersedia. Coba kembali beberapa saat lagi.',
+                );
+            }
+
+            if (body.visual?.status === 'invalid') {
+                throw new Error(
+                    body.visual.warnings?.[0] ??
+                        'Foto belum terdeteksi sebagai area kulit yang valid.',
+                );
             }
 
             const selected = body.selected_symptoms?.length ? body.selected_symptoms : symptoms.slice(0, 8);

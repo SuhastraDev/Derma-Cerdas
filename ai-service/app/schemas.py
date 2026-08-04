@@ -31,6 +31,7 @@ class VisualCandidate(BaseModel):
 
 class AnalyzeImageResponse(BaseModel):
     provider: str
+    provider_status: str = "ok"
     is_valid_skin_image: bool
     candidates: list[VisualCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

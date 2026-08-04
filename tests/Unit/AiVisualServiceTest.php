@@ -85,4 +85,31 @@ class AiVisualServiceTest extends TestCase
 
         (new AiVisualService())->analyze($imagePath, []);
     }
+
+    public function test_quota_exhaustion_is_reported_as_unavailable_instead_of_invalid_skin(): void
+    {
+        Storage::fake('public');
+        config(['services.dermacerdas_ai.url' => 'http://dermacerdas-ai.test']);
+
+        Http::fake([
+            'dermacerdas-ai.test/analyze-image' => Http::response([
+                'provider' => 'gemini',
+                'provider_status' => 'quota_exceeded',
+                'is_valid_skin_image' => false,
+                'candidates' => [],
+                'warnings' => ['Kuota Gemini API telah habis.'],
+                'raw_response' => ['error_code' => 'quota_exceeded'],
+            ]),
+        ]);
+
+        $imagePath = UploadedFile::fake()
+            ->image('skin.png', 320, 320)
+            ->store('consultations', 'public');
+
+        $analysis = (new AiVisualService())->analyze($imagePath, []);
+
+        $this->assertNull($analysis['is_valid_skin_image']);
+        $this->assertSame('unavailable', $analysis['validation_status']);
+        $this->assertSame('quota_exceeded', $analysis['provider_status']);
+    }
 }

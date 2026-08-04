@@ -31,6 +31,7 @@ class GeminiVisualClient:
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
         return {
+            "provider_status": "mock_mode",
             "is_valid_skin_image": False,
             "candidates": [],
             "warnings": [
@@ -61,12 +62,7 @@ class GeminiVisualClient:
                 contents=[prompt, image],
             )
         except Exception as exc:
-            return {
-                "is_valid_skin_image": False,
-                "candidates": [],
-                "warnings": [f"Gemini API gagal: {exc}"],
-                "raw_response": {"error": str(exc), "model": settings.gemini_model_name},
-            }
+            return self.provider_error_response(exc, "Gemini API")
 
         text = getattr(response, "text", "") or ""
 
@@ -75,6 +71,7 @@ class GeminiVisualClient:
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
         if settings.ai_mock_mode or not settings.gemini_api_key:
             return {
+                "provider_status": "mock_mode",
                 "is_valid_skin_image": False,
                 "warnings": ["AI_MOCK_MODE aktif; filter kulit tidak dijalankan."],
                 "raw_response": {"mode": "mock"},
@@ -96,11 +93,7 @@ class GeminiVisualClient:
                 config=self.skin_filter_config(),
             )
         except Exception as exc:
-            return {
-                "is_valid_skin_image": False,
-                "warnings": [f"Gemini skin filter gagal: {exc}"],
-                "raw_response": {"error": str(exc), "model": settings.gemini_model_name},
-            }
+            return self.provider_error_response(exc, "Gemini skin filter")
 
         text = getattr(response, "text", "") or ""
 
@@ -132,6 +125,29 @@ class GeminiVisualClient:
             },
         )
 
+    def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
+        error = str(exception)
+        normalized = error.lower()
+        quota_exceeded = "429" in normalized or "resource_exhausted" in normalized or "quota exceeded" in normalized
+        provider_status = "quota_exceeded" if quota_exceeded else "unavailable"
+        warning = (
+            "Kuota Gemini API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan kuota aktif."
+            if quota_exceeded
+            else f"{operation} sedang tidak tersedia. Coba kembali beberapa saat lagi."
+        )
+
+        return {
+            "provider_status": provider_status,
+            "is_valid_skin_image": False,
+            "candidates": [],
+            "warnings": [warning],
+            "raw_response": {
+                "error": error,
+                "error_code": provider_status,
+                "model": settings.gemini_model_name,
+            },
+        }
+
     def response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
 
@@ -141,6 +157,7 @@ class GeminiVisualClient:
         is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates or skin_evidence_score >= 0.35
 
         return {
+            "provider_status": "ok",
             "is_valid_skin_image": is_valid_skin_image,
             "candidates": raw_candidates,
             "warnings": parsed.get("warnings", []),
@@ -235,6 +252,7 @@ class GeminiVisualClient:
             warnings = ["Respons Gemini skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
 
         return {
+            "provider_status": "ok",
             "is_valid_skin_image": is_valid_skin_image,
             "warnings": warnings,
             "raw_response": {

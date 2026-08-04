@@ -5,13 +5,14 @@ namespace App\Services;
 use App\Models\Disease;
 use App\Models\DatasetClassMapping;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class AiVisualService
 {
     /**
      * @param  array<int, array<string, mixed>>  $textualRankings
-     * @return array{provider: string, is_valid_skin_image: bool|null, validation_status: string, candidates: array<int, array<string, mixed>>, warnings: array<int, string>, raw_response: array<string, mixed>}
+     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool|null, validation_status: string, candidates: array<int, array<string, mixed>>, warnings: array<int, string>, raw_response: array<string, mixed>}
      */
     public function analyze(string $imagePath, array $textualRankings): array
     {
@@ -20,6 +21,7 @@ class AiVisualService
         if ($baseUrl === '') {
             return [
                 'provider' => 'none',
+                'provider_status' => 'not_configured',
                 'is_valid_skin_image' => null,
                 'validation_status' => 'not_configured',
                 'candidates' => [],
@@ -43,6 +45,7 @@ class AiVisualService
         } catch (\Throwable $exception) {
             return [
                 'provider' => 'dermacerdas_ai',
+                'provider_status' => 'unavailable',
                 'is_valid_skin_image' => null,
                 'validation_status' => 'unavailable',
                 'candidates' => [],
@@ -54,6 +57,7 @@ class AiVisualService
         if ($response->failed()) {
             return [
                 'provider' => 'dermacerdas_ai',
+                'provider_status' => 'invalid_request',
                 'is_valid_skin_image' => false,
                 'validation_status' => 'invalid',
                 'candidates' => [],
@@ -63,11 +67,32 @@ class AiVisualService
         }
 
         $body = $response->json() ?? [];
+        $providerStatus = (string) ($body['provider_status'] ?? 'ok');
+
+        if ($providerStatus !== 'ok') {
+            Log::warning('AI visual provider unavailable.', [
+                'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
+                'provider_status' => $providerStatus,
+                'warnings' => array_values($body['warnings'] ?? []),
+            ]);
+
+            return [
+                'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
+                'provider_status' => $providerStatus,
+                'is_valid_skin_image' => null,
+                'validation_status' => 'unavailable',
+                'candidates' => [],
+                'warnings' => array_values($body['warnings'] ?? ['Layanan AI visual sedang tidak tersedia.']),
+                'raw_response' => $body['raw_response'] ?? $body,
+            ];
+        }
+
         $visualCandidates = $this->mapCandidates($body['candidates'] ?? []);
         $isValidSkinImage = (bool) ($body['is_valid_skin_image'] ?? false) || $visualCandidates !== [];
 
         return [
             'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
+            'provider_status' => $providerStatus,
             'is_valid_skin_image' => $isValidSkinImage,
             'validation_status' => $isValidSkinImage ? 'valid' : 'invalid',
             'candidates' => $visualCandidates,

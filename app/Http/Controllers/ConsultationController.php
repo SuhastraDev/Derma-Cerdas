@@ -99,6 +99,7 @@ class ConsultationController extends Controller
             'complaint_summary' => $complaintFeatures['summary'] ?? [],
             'visual' => [
                 'status' => $visualAnalysis['validation_status'],
+                'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
                 'is_valid_skin_image' => $visualAnalysis['is_valid_skin_image'],
                 'warnings' => $visualAnalysis['warnings'],
                 'candidates' => collect($visualAnalysis['candidates'] ?? [])

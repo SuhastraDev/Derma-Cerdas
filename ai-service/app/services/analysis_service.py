@@ -18,11 +18,13 @@ class VisualAnalysisService:
         warnings = [*validation.warnings, *ai_result.get("warnings", [])]
         candidates = normalize_candidates(ai_result.get("candidates", []), allowed_classes)
         is_valid_skin_image = bool(ai_result.get("is_valid_skin_image", False))
+        provider_status = str(ai_result.get("provider_status", "ok"))
         raw_response = dict(ai_result.get("raw_response", {}))
         raw_response["dataset_retrieval"] = dataset_matches
 
-        if not is_valid_skin_image and not candidates:
+        if provider_status == "ok" and not is_valid_skin_image and not candidates:
             skin_filter = self.client.validate_skin_image(payload.image_base64)
+            provider_status = str(skin_filter.get("provider_status", "ok"))
             is_valid_skin_image = bool(skin_filter.get("is_valid_skin_image", False))
             warnings = [*warnings, *skin_filter.get("warnings", [])]
             raw_response["skin_filter"] = skin_filter.get("raw_response", {})
@@ -32,6 +34,7 @@ class VisualAnalysisService:
 
         return AnalyzeImageResponse(
             provider=self.client.provider,
+            provider_status=provider_status,
             is_valid_skin_image=is_valid_skin_image,
             candidates=candidates,
             warnings=warnings,

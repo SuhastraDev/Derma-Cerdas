@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import app
+from app.schemas import AnalyzeImageRequest, ImageValidationResponse
+from app.services.analysis_service import VisualAnalysisService
 from app.services.class_mapping import allowed_candidate_classes
 from app.services.dataset_visual_index import DatasetVisualIndex
 from app.services.gemini_service import GeminiVisualClient, normalize_candidates
@@ -198,3 +200,53 @@ def test_dataset_visual_index_builds_and_retrieves_matching_class(tmp_path) -> N
         limit=2,
     )
     assert [match["dataset_class_name"] for match in restricted_matches] == ["Red_Rash"]
+
+
+def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
+    class EmptyDatasetIndex:
+        def search_base64(self, image_base64, allowed_classes):
+            return []
+
+    class QuotaExhaustedClient:
+        provider = "gemini"
+
+        def __init__(self) -> None:
+            self.skin_filter_calls = 0
+
+        def analyze(self, image_base64, candidate_classes, dataset_matches):
+            return {
+                "provider_status": "quota_exceeded",
+                "is_valid_skin_image": False,
+                "candidates": [],
+                "warnings": ["Kuota Gemini API telah habis."],
+                "raw_response": {"error_code": "quota_exceeded"},
+            }
+
+        def validate_skin_image(self, image_base64):
+            self.skin_filter_calls += 1
+            return {"is_valid_skin_image": False, "warnings": [], "raw_response": {}}
+
+    client_with_quota = QuotaExhaustedClient()
+    response = VisualAnalysisService(client_with_quota, EmptyDatasetIndex()).analyze(
+        AnalyzeImageRequest(
+            consultation_id="DC-QUOTA-001",
+            image_base64=sample_image_base64(),
+            candidate_classes=["Eczema"],
+        ),
+        ImageValidationResponse(is_valid=True, mime_type="image/png", size_bytes=100),
+    )
+
+    assert response.provider_status == "quota_exceeded"
+    assert response.is_valid_skin_image is False
+    assert client_with_quota.skin_filter_calls == 0
+
+
+def test_gemini_429_is_classified_as_quota_exhausted() -> None:
+    response = GeminiVisualClient().provider_error_response(
+        RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded"),
+        "Gemini API",
+    )
+
+    assert response["provider_status"] == "quota_exceeded"
+    assert response["raw_response"]["error_code"] == "quota_exceeded"
+    assert "API key dengan kuota aktif" in response["warnings"][0]

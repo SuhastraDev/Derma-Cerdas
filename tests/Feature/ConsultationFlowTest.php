@@ -161,6 +161,37 @@ class ConsultationFlowTest extends TestCase
         $this->assertDatabaseCount('consultation_final_results', 0);
     }
 
+    public function test_quota_exhaustion_reports_ai_service_problem_instead_of_blaming_photo(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'gemini',
+                    'provider_status' => 'quota_exceeded',
+                    'is_valid_skin_image' => null,
+                    'validation_status' => 'unavailable',
+                    'candidates' => [],
+                    'warnings' => ['Kuota Gemini API telah habis.'],
+                    'raw_response' => ['error_code' => 'quota_exceeded'],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Kuota Habis',
+            'complaint_text' => 'Bercak pada kulit terlihat jelas dan tidak terasa nyeri.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms(['PATCHES' => 0.8]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertSessionHasErrors([
+            'image' => 'Kuota analisis visual Gemini sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan kuota aktif.',
+        ]);
+    }
+
     public function test_valid_skin_image_without_visual_candidates_uses_textual_result(): void
     {
         Storage::fake('public');
