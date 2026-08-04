@@ -67,7 +67,8 @@ class GeminiVisualClient:
 
         raw_candidates = parsed.get("candidates", [])
         has_candidates = isinstance(raw_candidates, list) and len(raw_candidates) > 0
-        is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates
+        skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
+        is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates or skin_evidence_score >= 0.35
 
         return {
             "is_valid_skin_image": is_valid_skin_image,
@@ -76,6 +77,7 @@ class GeminiVisualClient:
             "raw_response": {
                 "text": text,
                 "model": settings.gemini_model_name,
+                "skin_evidence_score": skin_evidence_score,
             },
         }
 
@@ -84,18 +86,30 @@ class GeminiVisualClient:
 
         return (
             "Anda adalah komponen visual screening DermaCerdas, bukan dokter. "
-            "Analisis gambar kulit hanya untuk kandidat awal. "
-            "Pilih maksimal 3 kandidat dari daftar class berikut: "
+            "Tugas pertama adalah FILTER KULIT: tentukan apakah gambar menampilkan area kulit/tubuh manusia. "
+            "Gunakan filter yang longgar untuk mencegah false negative. Bagian tubuh seperti tangan, kaki, wajah, leher, "
+            "punggung, perut, paha, bokong, kulit kepala, kuku, atau lipatan tubuh harus dianggap valid jika kulit terlihat. "
+            "Foto close-up, blur ringan, pencahayaan kurang ideal, atau lesi tidak jelas tetap valid selama area kulit manusia terlihat. "
+            "Set is_valid_skin_image false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, "
+            "layar, pemandangan, atau file rusak. Jangan mensyaratkan penyakit terlihat jelas untuk menyatakan kulit valid. "
+            "Isi skin_evidence_score 0.0 sampai 1.0 berdasarkan keyakinan bahwa gambar berisi kulit/tubuh manusia. "
+            "Tugas kedua adalah kandidat awal: jika filter kulit valid, pilih maksimal 3 kandidat dari daftar class berikut bila ada yang mirip: "
             f"{class_list}. "
             "Balas hanya JSON valid dengan struktur: "
-            '{"is_valid_skin_image": true, "candidates": ['
+            '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
             '"reason": "alasan visual singkat"}], "warnings": []}. '
-            "Set is_valid_skin_image true jika gambar menampilkan area kulit manusia, termasuk foto close-up, blur ringan, "
-            "pencahayaan kurang ideal, atau lesi tidak terlalu jelas. Jangan menolak hanya karena kualitas foto kurang baik; "
-            "masukkan catatan kualitas ke warnings dan tetap beri kandidat dengan skor lebih rendah jika masih terlihat kulit. "
-            "Set is_valid_skin_image false hanya jika gambar jelas bukan kulit manusia, file tidak dapat dinilai, atau objek utama bukan area tubuh/kulit."
+            "Jika gambar valid sebagai kulit tetapi tidak cocok dengan daftar class, tetap set is_valid_skin_image true, "
+            "skin_evidence_score tinggi, candidates kosong, dan jelaskan kualitas/keterbatasan di warnings."
         )
+
+    def skin_evidence_score(self, value: Any) -> float:
+        try:
+            score = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+        return max(0.0, min(1.0, score))
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
         cleaned = text.strip()

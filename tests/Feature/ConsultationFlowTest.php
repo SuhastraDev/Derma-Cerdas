@@ -161,6 +161,50 @@ class ConsultationFlowTest extends TestCase
         $this->assertDatabaseCount('consultation_final_results', 0);
     }
 
+    public function test_valid_skin_image_without_visual_candidates_uses_textual_result(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [],
+                    'warnings' => ['Foto kulit valid, tetapi kandidat visual belum cukup yakin.'],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $response = $this->post(route('consultation.store'), [
+            'visitor_name' => 'Kulit Valid',
+            'complaint_text' => 'Gatal sejak satu minggu, ruam melingkar di badan dan tepinya bersisik.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'RING_SHAPED_EDGE' => 0.8,
+                'ITCHING' => 0.6,
+                'RED_RASH' => 0.6,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ]);
+
+        $consultation = Consultation::query()->firstOrFail();
+
+        $response->assertRedirect(route('consultation.result', $consultation->session_code));
+        $this->assertSame('completed', $consultation->refresh()->status);
+        $this->assertDatabaseCount('consultation_visual_results', 0);
+        $this->assertDatabaseHas('consultation_final_results', [
+            'consultation_id' => $consultation->id,
+        ]);
+
+        $this->get(route('consultation.result', $consultation->session_code))
+            ->assertOk();
+    }
+
     public function test_consultation_is_rejected_when_visual_ai_is_not_configured(): void
     {
         Storage::fake('public');

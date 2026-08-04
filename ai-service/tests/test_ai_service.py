@@ -95,3 +95,13 @@ def test_gemini_response_treats_candidate_output_as_valid_skin_image() -> None:
 
     assert payload["is_valid_skin_image"] is True
     assert payload["candidates"]
+
+
+def test_gemini_response_treats_skin_evidence_as_valid_without_candidates() -> None:
+    payload = GeminiVisualClient().response_from_text(
+        '{"is_valid_skin_image": false, "skin_evidence_score": 0.72, '
+        '"candidates": [], "warnings": ["Kulit terlihat, tetapi class tidak yakin"]}'
+    )
+
+    assert payload["is_valid_skin_image"] is True
+    assert payload["candidates"] == []

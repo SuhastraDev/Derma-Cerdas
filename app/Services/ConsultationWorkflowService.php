@@ -318,6 +318,12 @@ class ConsultationWorkflowService
             ->sortByDesc(fn (array $item): float => (float) $item['decision']['fusion_score'])
             ->values();
 
+        if ($decisions->isEmpty()) {
+            throw ValidationException::withMessages([
+                'symptoms' => 'Data gejala dan visual belum cukup untuk membuat hasil awal. Pilih minimal satu gejala yang sesuai atau tulis keluhan lebih jelas.',
+            ]);
+        }
+
         /** @var Disease $disease */
         $disease = $decisions->first()['disease'];
         $decision = $decisions->first()['decision'];
