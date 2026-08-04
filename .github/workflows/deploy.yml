@@ -70,5 +70,5 @@ jobs:
               sleep 2
             done
 
-            curl -fsSI http://127.0.0.1
+            curl -fsSI -H "Host: dermacerdas.duckdns.org" http://127.0.0.1/up
           EOF
