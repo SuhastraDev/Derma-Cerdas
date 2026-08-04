@@ -84,3 +84,14 @@ def test_gemini_json_parser_handles_fenced_json() -> None:
     )
 
     assert parsed["is_valid_skin_image"] is True
+
+
+def test_gemini_response_treats_candidate_output_as_valid_skin_image() -> None:
+    payload = GeminiVisualClient().response_from_text(
+        '{"is_valid_skin_image": false, "candidates": ['
+        '{"dataset_class_name": "Eczema", "visual_score": 0.42, "reason": "Area kulit tampak kemerahan"}'
+        '], "warnings": ["Foto agak blur"]}'
+    )
+
+    assert payload["is_valid_skin_image"] is True
+    assert payload["candidates"]

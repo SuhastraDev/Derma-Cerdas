@@ -59,11 +59,19 @@ class GeminiVisualClient:
             }
 
         text = getattr(response, "text", "") or ""
+
+        return self.response_from_text(text)
+
+    def response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
 
+        raw_candidates = parsed.get("candidates", [])
+        has_candidates = isinstance(raw_candidates, list) and len(raw_candidates) > 0
+        is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates
+
         return {
-            "is_valid_skin_image": bool(parsed.get("is_valid_skin_image", True)),
-            "candidates": parsed.get("candidates", []),
+            "is_valid_skin_image": is_valid_skin_image,
+            "candidates": raw_candidates,
             "warnings": parsed.get("warnings", []),
             "raw_response": {
                 "text": text,
@@ -83,7 +91,10 @@ class GeminiVisualClient:
             '{"is_valid_skin_image": true, "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
             '"reason": "alasan visual singkat"}], "warnings": []}. '
-            "Jika gambar bukan kulit atau kualitas buruk, set is_valid_skin_image false."
+            "Set is_valid_skin_image true jika gambar menampilkan area kulit manusia, termasuk foto close-up, blur ringan, "
+            "pencahayaan kurang ideal, atau lesi tidak terlalu jelas. Jangan menolak hanya karena kualitas foto kurang baik; "
+            "masukkan catatan kualitas ke warnings dan tetap beri kandidat dengan skor lebih rendah jika masih terlihat kulit. "
+            "Set is_valid_skin_image false hanya jika gambar jelas bukan kulit manusia, file tidak dapat dinilai, atau objek utama bukan area tubuh/kulit."
         )
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
