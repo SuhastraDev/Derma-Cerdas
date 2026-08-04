@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -44,10 +45,17 @@ def allowed_candidate_classes(candidate_classes: list[str]) -> list[str]:
     if not candidate_classes:
         return [mapping.dataset_class_name for mapping in MVP_MAPPINGS.values()]
 
-    resolved = []
+    resolved: list[str] = []
     for class_name in candidate_classes:
-        mapping = resolve_mapping(class_name)
+        cleaned = str(class_name).strip()
+
+        if not re.fullmatch(r"[A-Za-z0-9_().&' -]{1,160}", cleaned):
+            continue
+
+        mapping = resolve_mapping(cleaned)
         if mapping:
             resolved.append(mapping.dataset_class_name)
+        else:
+            resolved.append(cleaned)
 
-    return resolved or [mapping.dataset_class_name for mapping in MVP_MAPPINGS.values()]
+    return list(dict.fromkeys(resolved)) or [mapping.dataset_class_name for mapping in MVP_MAPPINGS.values()]

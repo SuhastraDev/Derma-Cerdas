@@ -24,6 +24,15 @@ def load_env_file() -> None:
 load_env_file()
 
 
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def service_path(value: str) -> Path:
+    path = Path(value)
+
+    return path if path.is_absolute() else (AI_SERVICE_ROOT / path).resolve()
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", "DermaCerdas AI Service")
@@ -36,6 +45,18 @@ class Settings:
         item.strip()
         for item in os.getenv("ALLOWED_IMAGE_MIME_TYPES", "image/jpeg,image/png,image/webp").split(",")
         if item.strip()
+    )
+    dataset_image_root: Path = service_path(
+        os.getenv(
+            "DATASET_IMAGE_ROOT",
+            str(Path(__file__).resolve().parents[2] / "datasets" / "sd-198" / "images"),
+        )
+    )
+    dataset_index_path: Path = service_path(
+        os.getenv(
+            "DATASET_INDEX_PATH",
+            str(Path(__file__).resolve().parents[1] / "storage" / "dataset_visual_index.json"),
+        )
     )
 
 

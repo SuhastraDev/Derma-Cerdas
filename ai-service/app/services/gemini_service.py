@@ -9,20 +9,25 @@ from PIL import Image
 
 from app.config import settings
 from app.schemas import VisualCandidate
-from app.services.class_mapping import allowed_candidate_classes, resolve_mapping
+from app.services.class_mapping import allowed_candidate_classes, normalize_class_name, resolve_mapping
 from app.services.image_validation import ImageValidator
 
 
 class GeminiVisualClient:
     provider = "gemini"
 
-    def analyze(self, image_base64: str, candidate_classes: list[str]) -> dict[str, Any]:
+    def analyze(
+        self,
+        image_base64: str,
+        candidate_classes: list[str],
+        dataset_matches: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         classes = allowed_candidate_classes(candidate_classes)
 
         if settings.ai_mock_mode or not settings.gemini_api_key:
             return self.mock_response(classes)
 
-        return self.gemini_response(image_base64, classes)
+        return self.gemini_response(image_base64, classes, dataset_matches or [])
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
         return {
@@ -34,7 +39,12 @@ class GeminiVisualClient:
             "raw_response": {"mode": "mock"},
         }
 
-    def gemini_response(self, image_base64: str, classes: list[str]) -> dict[str, Any]:
+    def gemini_response(
+        self,
+        image_base64: str,
+        classes: list[str],
+        dataset_matches: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         try:
             from google import genai
         except ImportError as exc:
@@ -43,7 +53,7 @@ class GeminiVisualClient:
         raw = ImageValidator().decode_base64(image_base64)
         image = Image.open(BytesIO(raw))
         client = genai.Client(api_key=settings.gemini_api_key)
-        prompt = self.prompt(classes)
+        prompt = self.prompt(classes, dataset_matches)
 
         try:
             response = client.models.generate_content(
@@ -83,6 +93,7 @@ class GeminiVisualClient:
             response = client.models.generate_content(
                 model=settings.gemini_model_name,
                 contents=[self.skin_filter_prompt(), image],
+                config=self.skin_filter_config(),
             )
         except Exception as exc:
             return {
@@ -94,6 +105,32 @@ class GeminiVisualClient:
         text = getattr(response, "text", "") or ""
 
         return self.skin_filter_response_from_text(text)
+
+    def skin_filter_config(self) -> Any:
+        from google.genai import types
+
+        return types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema={
+                "type": "object",
+                "properties": {
+                    "contains_human_body_part": {"type": "boolean"},
+                    "contains_visible_skin": {"type": "boolean"},
+                    "is_valid_skin_image": {"type": "boolean"},
+                    "skin_evidence_score": {"type": "number"},
+                    "reason": {"type": "string"},
+                    "warnings": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "contains_human_body_part",
+                    "contains_visible_skin",
+                    "is_valid_skin_image",
+                    "skin_evidence_score",
+                    "reason",
+                    "warnings",
+                ],
+            },
+        )
 
     def response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
@@ -114,8 +151,18 @@ class GeminiVisualClient:
             },
         }
 
-    def prompt(self, classes: list[str]) -> str:
-        class_list = ", ".join(classes)
+    def prompt(self, classes: list[str], dataset_matches: list[dict[str, Any]] | None = None) -> str:
+        class_list = json.dumps(classes, ensure_ascii=False)
+        retrieval_hints = json.dumps(
+            [
+                {
+                    "dataset_class_name": match.get("dataset_class_name"),
+                    "similarity": match.get("similarity"),
+                }
+                for match in (dataset_matches or [])
+            ],
+            ensure_ascii=False,
+        )
 
         return (
             "Anda adalah komponen visual screening DermaCerdas, bukan dokter. "
@@ -126,8 +173,12 @@ class GeminiVisualClient:
             "Set is_valid_skin_image false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, "
             "layar, pemandangan, atau file rusak. Jangan mensyaratkan penyakit terlihat jelas untuk menyatakan kulit valid. "
             "Isi skin_evidence_score 0.0 sampai 1.0 berdasarkan keyakinan bahwa gambar berisi kulit/tubuh manusia. "
-            "Tugas kedua adalah kandidat awal: jika filter kulit valid, pilih maksimal 3 kandidat dari daftar class berikut bila ada yang mirip: "
+            "Tugas kedua adalah kandidat awal: jika filter kulit valid, pilih maksimal 3 kandidat dari daftar class berikut bila ada yang mirip. "
+            "Salin dataset_class_name persis dari daftar dan jangan membuat nama class baru: "
             f"{class_list}. "
+            "Sistem lokal juga menghitung kemiripan warna, pola spasial, dan tekstur terhadap centroid gambar dataset. "
+            f"Hint retrieval dataset: {retrieval_hints}. "
+            "Hint ini hanya shortlist pendukung, bukan diagnosis; abaikan bila bertentangan dengan tampilan gambar. "
             "Balas hanya JSON valid dengan struktur: "
             '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
@@ -146,16 +197,18 @@ class GeminiVisualClient:
 
     def skin_filter_prompt(self) -> str:
         return (
-            "Anda hanya bertugas memfilter apakah gambar berisi area kulit/tubuh manusia. "
+            "Anda adalah filter visual khusus yang hanya menentukan apakah gambar berisi bagian tubuh dan kulit manusia. "
             "Jangan menilai penyakit dan jangan butuh lesi yang jelas. "
             "Jawab true jika terlihat kulit manusia atau bagian tubuh manusia seperti tangan, kaki, wajah, leher, lengan, paha, "
             "punggung, perut, bokong, kulit kepala, kuku, atau lipatan tubuh, termasuk bila ada bercak putih/cokelat, ruam, luka, "
             "bercak putih vitiligo, warna kulit tidak merata, blur ringan, crop close-up, atau pencahayaan kurang ideal. "
             "Jawab false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, layar, pemandangan, "
             "atau file tidak dapat dinilai. "
-            "Jika ragu antara kulit manusia dan bukan kulit, pilih true dengan warnings kualitas foto. "
-            "Balas hanya JSON valid: "
-            '{"is_valid_skin_image": true, "skin_evidence_score": 0.0, "warnings": []}.'
+            "Contoh valid: lengan dengan bercak putih seperti vitiligo, close-up kaki dengan ruam, wajah berjerawat, kuku, "
+            "kulit kepala, atau lipatan tubuh. Contoh tidak valid: dokumen, tangkapan layar, makanan, kendaraan, dan pemandangan. "
+            "Nilai contains_human_body_part dan contains_visible_skin secara terpisah sebelum menyimpulkan. "
+            "Jika keduanya true maka is_valid_skin_image juga harus true, walaupun penyakit tidak dikenali. "
+            "Balas sesuai schema JSON yang diberikan."
         )
 
     def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
@@ -166,9 +219,14 @@ class GeminiVisualClient:
         )
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
         text_signal = self.skin_text_signal(text) if parse_failed else None
+        has_anatomical_skin_evidence = (
+            parsed.get("contains_human_body_part") is True
+            and parsed.get("contains_visible_skin") is True
+        )
         is_valid_skin_image = (
             bool(parsed.get("is_valid_skin_image", False))
             or skin_evidence_score >= 0.35
+            or has_anatomical_skin_evidence
             or text_signal is True
         )
         warnings = parsed.get("warnings", [])
@@ -183,6 +241,8 @@ class GeminiVisualClient:
                 "text": text,
                 "model": settings.gemini_model_name,
                 "skin_evidence_score": skin_evidence_score,
+                "contains_human_body_part": parsed.get("contains_human_body_part"),
+                "contains_visible_skin": parsed.get("contains_visible_skin"),
                 "skin_text_signal": text_signal,
             },
         }
@@ -262,21 +322,32 @@ class GeminiVisualClient:
         return data
 
 
-def normalize_candidates(raw_candidates: list[dict[str, Any]]) -> list[VisualCandidate]:
+def normalize_candidates(
+    raw_candidates: list[dict[str, Any]],
+    allowed_classes: list[str] | None = None,
+) -> list[VisualCandidate]:
     normalized: list[VisualCandidate] = []
+    allowed = allowed_candidate_classes(allowed_classes or [])
+    canonical_names = {normalize_class_name(class_name): class_name for class_name in allowed}
 
     for raw in raw_candidates:
         class_name = str(raw.get("dataset_class_name", "")).strip()
-        mapping = resolve_mapping(class_name)
+        canonical_name = canonical_names.get(normalize_class_name(class_name))
 
-        if not mapping:
+        if not canonical_name:
             continue
 
-        score = max(0.0, min(1.0, float(raw.get("visual_score", 0))))
+        mapping = resolve_mapping(canonical_name)
+
+        try:
+            score = max(0.0, min(1.0, float(raw.get("visual_score", 0))))
+        except (TypeError, ValueError):
+            score = 0.0
+
         normalized.append(
             VisualCandidate(
-                dataset_class_name=mapping.dataset_class_name,
-                local_disease_code=mapping.local_disease_code,
+                dataset_class_name=mapping.dataset_class_name if mapping else canonical_name,
+                local_disease_code=mapping.local_disease_code if mapping else None,
                 visual_score=round(score, 4),
                 reason=str(raw.get("reason") or "Kandidat visual dari Gemini."),
             )

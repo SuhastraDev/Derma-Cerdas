@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from app.config import settings
 from app.schemas import AnalyzeImageRequest, AnalyzeImageResponse, ImageValidationRequest, ImageValidationResponse
 from app.services.analysis_service import VisualAnalysisService
+from app.services.dataset_visual_index import DatasetVisualIndex
 from app.services.gemini_service import GeminiVisualClient
 from app.services.image_validation import ImageValidationError, ImageValidator
 
@@ -18,6 +19,7 @@ def health() -> dict[str, str | bool]:
         "service": settings.app_name,
         "environment": settings.app_env,
         "mock_mode": settings.ai_mock_mode,
+        "dataset_index_ready": DatasetVisualIndex().status()["ready"],
     }
 
 

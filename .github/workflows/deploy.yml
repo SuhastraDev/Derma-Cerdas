@@ -40,6 +40,10 @@ jobs:
             npm ci
             npm run build
 
+            if [ ! -f ai-service/storage/dataset_visual_index.json ] && [ -x ai-service/.venv/bin/python ] && [ -d datasets/sd-198/images ]; then
+              ai-service/.venv/bin/python ai-service/scripts/build_dataset_index.py --max-images-per-class 20
+            fi
+
             php artisan migrate --force
             php artisan storage:link --force
             php artisan optimize:clear

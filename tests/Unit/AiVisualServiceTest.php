@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\Disease;
+use App\Models\DatasetClassMapping;
 use App\Services\AiVisualService;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,5 +48,41 @@ class AiVisualServiceTest extends TestCase
         $this->assertSame('valid', $analysis['validation_status']);
         $this->assertCount(1, $analysis['candidates']);
         $this->assertTrue($analysis['candidates'][0]['disease']->is(Disease::query()->where('code', 'ECZEMA')->firstOrFail()));
+    }
+
+    public function test_request_includes_linked_production_classes_outside_textual_top_eight(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        config(['services.dermacerdas_ai.url' => 'http://dermacerdas-ai.test']);
+
+        $disease = Disease::query()->where('code', 'ECZEMA')->firstOrFail();
+        DatasetClassMapping::query()->create([
+            'dataset_class_id' => 999,
+            'dataset_class_name' => 'Basal_Cell_Carcinoma',
+            'nama_indonesia' => 'Karsinoma sel basal',
+            'scope_category' => 'rujuk',
+            'boleh_rekomendasi_obat' => false,
+            'default_action' => 'refer',
+            'disease_id' => $disease->id,
+        ]);
+
+        Http::fake(function ($request) {
+            $this->assertContains('Basal_Cell_Carcinoma', $request['candidate_classes']);
+
+            return Http::response([
+                'provider' => 'gemini',
+                'is_valid_skin_image' => true,
+                'candidates' => [],
+                'warnings' => [],
+                'raw_response' => [],
+            ]);
+        });
+
+        $imagePath = UploadedFile::fake()
+            ->image('skin.png', 320, 320)
+            ->store('consultations', 'public');
+
+        (new AiVisualService())->analyze($imagePath, []);
     }
 }

@@ -27,6 +27,7 @@
 __pycache__/
 .pytest_cache/
 datasets/
+/ai-service/storage/*.json
 aurora-free-1.0.0/
 screwfast-1.0.0/
 backend-laravel/

@@ -21,6 +21,16 @@ Default `AI_MOCK_MODE=true`, jadi endpoint `/analyze-image` bisa dites tanpa API
 - `POST /validate-image`
 - `POST /analyze-image`
 
+## Indeks visual dataset
+
+Bangun indeks setelah folder SD-198 tersedia. Indeks menyimpan centroid fitur visual per class dan tidak menyalin file gambar.
+
+```bash
+python scripts/build_dataset_index.py --max-images-per-class 40
+```
+
+Endpoint `/health` menampilkan `dataset_index_ready=true` jika indeks berhasil dimuat.
+
 ## Catatan Safety
 
 Output AI service hanya kandidat visual. Keputusan final tetap dilakukan Laravel melalui Certainty Factor, fusion, threshold, dataset scope, dan red flags.

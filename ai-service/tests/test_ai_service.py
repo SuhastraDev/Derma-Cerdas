@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import app
+from app.services.class_mapping import allowed_candidate_classes
+from app.services.dataset_visual_index import DatasetVisualIndex
 from app.services.gemini_service import GeminiVisualClient, normalize_candidates
 
 
@@ -26,6 +28,7 @@ def test_health_endpoint() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert isinstance(response.json()["dataset_index_ready"], bool)
 
 
 def test_validate_image_accepts_png_base64() -> None:
@@ -66,16 +69,25 @@ def test_analyze_image_mock_mode_does_not_claim_valid_skin_image() -> None:
     assert payload["warnings"]
 
 
-def test_normalize_candidates_discards_unknown_dataset_classes() -> None:
+def test_allowed_candidate_classes_preserves_production_classes_outside_mvp() -> None:
+    classes = allowed_candidate_classes(["Vitiligo", "Basal_Cell_Carcinoma", "Eczema"])
+
+    assert classes == ["Vitiligo", "Basal_Cell_Carcinoma", "Eczema"]
+
+
+def test_normalize_candidates_preserves_allowed_production_class_for_laravel_mapping() -> None:
     candidates = normalize_candidates(
         [
-            {"dataset_class_name": "Unknown_Class", "visual_score": 0.99, "reason": "unknown"},
+            {"dataset_class_name": "Basal_Cell_Carcinoma", "visual_score": 0.99, "reason": "suspicious lesion"},
             {"dataset_class_name": "Urticaria", "visual_score": 0.70, "reason": "wheals"},
-        ]
+        ],
+        allowed_classes=["Basal_Cell_Carcinoma", "Urticaria"],
     )
 
-    assert len(candidates) == 1
-    assert candidates[0].local_disease_code == "URTICARIA"
+    assert len(candidates) == 2
+    assert candidates[0].dataset_class_name == "Basal_Cell_Carcinoma"
+    assert candidates[0].local_disease_code is None
+    assert candidates[1].local_disease_code == "URTICARIA"
 
 
 def test_gemini_json_parser_handles_fenced_json() -> None:
@@ -115,6 +127,13 @@ def test_skin_filter_response_treats_body_area_as_valid() -> None:
     assert payload["is_valid_skin_image"] is True
 
 
+def test_skin_filter_structured_output_config_is_supported_by_installed_sdk() -> None:
+    config = GeminiVisualClient().skin_filter_config()
+
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is not None
+
+
 def test_skin_filter_response_accepts_non_json_human_skin_answer() -> None:
     payload = GeminiVisualClient().skin_filter_response_from_text(
         "Ya, ini foto kulit manusia pada lengan dengan bercak putih seperti vitiligo."
@@ -129,3 +148,53 @@ def test_skin_filter_response_rejects_non_json_clear_non_skin_answer() -> None:
     )
 
     assert payload["is_valid_skin_image"] is False
+
+
+def test_skin_filter_rejects_explicit_non_skin_json() -> None:
+    payload = GeminiVisualClient().skin_filter_response_from_text(
+        '{"is_valid_skin_image": false, "skin_evidence_score": 0.02, '
+        '"contains_human_body_part": false, "contains_visible_skin": false, '
+        '"warnings": ["Objek adalah dokumen"]}'
+    )
+
+    assert payload["is_valid_skin_image"] is False
+
+
+def test_skin_filter_accepts_visible_skin_evidence_even_if_summary_flag_is_false() -> None:
+    payload = GeminiVisualClient().skin_filter_response_from_text(
+        '{"is_valid_skin_image": false, "skin_evidence_score": 0.82, '
+        '"contains_human_body_part": true, "contains_visible_skin": true, '
+        '"warnings": ["Bercak putih terlihat pada lengan"]}'
+    )
+
+    assert payload["is_valid_skin_image"] is True
+
+
+def test_dataset_visual_index_builds_and_retrieves_matching_class(tmp_path) -> None:
+    image_root = tmp_path / "images"
+    red_class = image_root / "Red_Rash"
+    blue_class = image_root / "Blue_Object"
+    red_class.mkdir(parents=True)
+    blue_class.mkdir(parents=True)
+    Image.new("RGB", (128, 128), color=(210, 70, 60)).save(red_class / "red.jpg")
+    Image.new("RGB", (128, 128), color=(30, 60, 210)).save(blue_class / "blue.jpg")
+
+    visual_index = DatasetVisualIndex(image_root=image_root, index_path=tmp_path / "index.json")
+    summary = visual_index.build()
+    matches = visual_index.search_base64(
+        sample_image_base64(),
+        allowed_classes=["Red_Rash", "Blue_Object"],
+        limit=2,
+    )
+
+    assert summary["indexed_classes"] == 2
+    assert summary["indexed_images"] == 2
+    assert matches[0]["dataset_class_name"] == "Red_Rash"
+    assert matches[0]["similarity"] > matches[1]["similarity"]
+
+    restricted_matches = visual_index.search_base64(
+        sample_image_base64(),
+        allowed_classes=["Red_Rash"],
+        limit=2,
+    )
+    assert [match["dataset_class_name"] for match in restricted_matches] == ["Red_Rash"]

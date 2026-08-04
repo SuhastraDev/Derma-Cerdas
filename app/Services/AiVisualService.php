@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Disease;
+use App\Models\DatasetClassMapping;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
@@ -81,7 +82,7 @@ class AiVisualService
      */
     private function candidateClasses(array $textualRankings): array
     {
-        return collect($textualRankings)
+        $textualClasses = collect($textualRankings)
             ->take(8)
             ->flatMap(function (array $ranking): array {
                 /** @var Disease $disease */
@@ -90,6 +91,18 @@ class AiVisualService
                 return $disease->datasetMappings()->pluck('dataset_class_name')->all();
             })
             ->filter()
+            ->values();
+
+        $productionClasses = DatasetClassMapping::query()
+            ->whereNotNull('disease_id')
+            ->orderBy('dataset_class_id')
+            ->pluck('dataset_class_name');
+
+        return $textualClasses
+            ->concat($productionClasses)
+            ->filter(fn ($className): bool => is_string($className) && trim($className) !== '')
+            ->unique()
+            ->take(160)
             ->values()
             ->all();
     }
