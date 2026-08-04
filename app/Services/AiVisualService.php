@@ -62,13 +62,14 @@ class AiVisualService
         }
 
         $body = $response->json() ?? [];
-        $isValidSkinImage = (bool) ($body['is_valid_skin_image'] ?? false);
+        $visualCandidates = $this->mapCandidates($body['candidates'] ?? []);
+        $isValidSkinImage = (bool) ($body['is_valid_skin_image'] ?? false) || $visualCandidates !== [];
 
         return [
             'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
             'is_valid_skin_image' => $isValidSkinImage,
             'validation_status' => $isValidSkinImage ? 'valid' : 'invalid',
-            'candidates' => $isValidSkinImage ? $this->mapCandidates($body['candidates'] ?? []) : [],
+            'candidates' => $visualCandidates,
             'warnings' => array_values($body['warnings'] ?? []),
             'raw_response' => $body['raw_response'] ?? $body,
         ];
