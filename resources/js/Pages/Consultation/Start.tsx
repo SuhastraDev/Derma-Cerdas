@@ -190,6 +190,14 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         currentStep === 6,
     ];
 
+    const analysisErrorMessage =
+        errors.image ??
+        errors.complaint_text ??
+        errors.symptoms ??
+        errors.visitor_name ??
+        errors.consent ??
+        null;
+
     const maxAccessibleStep = completed.findIndex((value) => !value);
     const unlockedUntil = maxAccessibleStep === -1 ? steps.length - 1 : maxAccessibleStep;
 
@@ -823,6 +831,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                     activeIndex={analysisStageIndex}
                     failedIndex={failedAnalysisStage}
                     isProcessing={processing}
+                    errorMessage={analysisErrorMessage}
                 />
             )}
         </PublicLayout>
@@ -870,10 +879,12 @@ function AnalysisTracker({
     activeIndex,
     failedIndex,
     isProcessing,
+    errorMessage,
 }: {
     activeIndex: number;
     failedIndex: number | null;
     isProcessing: boolean;
+    errorMessage: string | null;
 }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 px-4 backdrop-blur-sm">
@@ -894,6 +905,11 @@ function AnalysisTracker({
                                 ? 'Periksa pesan error di tahap konsultasi yang terbuka, lalu kirim ulang setelah diperbaiki.'
                                 : 'Sistem memvalidasi foto, menghitung gejala, lalu menggabungkan hasil visual dan tekstual.'}
                         </p>
+                        {failedIndex !== null && errorMessage && (
+                            <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700">
+                                {errorMessage}
+                            </p>
+                        )}
                     </div>
                 </div>
 
