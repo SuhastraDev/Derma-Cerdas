@@ -150,27 +150,91 @@ class GeminiVisualClient:
             "Jangan menilai penyakit dan jangan butuh lesi yang jelas. "
             "Jawab true jika terlihat kulit manusia atau bagian tubuh manusia seperti tangan, kaki, wajah, leher, lengan, paha, "
             "punggung, perut, bokong, kulit kepala, kuku, atau lipatan tubuh, termasuk bila ada bercak putih/cokelat, ruam, luka, "
-            "blur ringan, crop close-up, atau pencahayaan kurang ideal. "
+            "bercak putih vitiligo, warna kulit tidak merata, blur ringan, crop close-up, atau pencahayaan kurang ideal. "
             "Jawab false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, layar, pemandangan, "
             "atau file tidak dapat dinilai. "
+            "Jika ragu antara kulit manusia dan bukan kulit, pilih true dengan warnings kualitas foto. "
             "Balas hanya JSON valid: "
             '{"is_valid_skin_image": true, "skin_evidence_score": 0.0, "warnings": []}.'
         )
 
     def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
+        parse_failed = any(
+            warning.startswith("Respons Gemini")
+            for warning in parsed.get("warnings", [])
+        )
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
-        is_valid_skin_image = bool(parsed.get("is_valid_skin_image", False)) or skin_evidence_score >= 0.35
+        text_signal = self.skin_text_signal(text) if parse_failed else None
+        is_valid_skin_image = (
+            bool(parsed.get("is_valid_skin_image", False))
+            or skin_evidence_score >= 0.35
+            or text_signal is True
+        )
+        warnings = parsed.get("warnings", [])
+
+        if parse_failed and text_signal is not None:
+            warnings = ["Respons Gemini skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
 
         return {
             "is_valid_skin_image": is_valid_skin_image,
-            "warnings": parsed.get("warnings", []),
+            "warnings": warnings,
             "raw_response": {
                 "text": text,
                 "model": settings.gemini_model_name,
                 "skin_evidence_score": skin_evidence_score,
+                "skin_text_signal": text_signal,
             },
         }
+
+    def skin_text_signal(self, text: str) -> bool | None:
+        normalized = text.lower()
+        positive_patterns = [
+            "true",
+            "valid",
+            "kulit",
+            "skin",
+            "human",
+            "manusia",
+            "body",
+            "tubuh",
+            "arm",
+            "lengan",
+            "hand",
+            "tangan",
+            "leg",
+            "kaki",
+            "vitiligo",
+            "bercak putih",
+        ]
+        negative_patterns = [
+            "false",
+            "not skin",
+            "bukan kulit",
+            "tidak ada kulit",
+            "non-skin",
+            "object",
+            "benda",
+            "document",
+            "dokumen",
+            "food",
+            "makanan",
+            "screen",
+            "layar",
+            "landscape",
+            "pemandangan",
+        ]
+
+        has_positive = any(pattern in normalized for pattern in positive_patterns)
+        has_negative = any(pattern in normalized for pattern in negative_patterns)
+
+        if has_positive and not has_negative:
+            return True
+
+        if has_negative and not has_positive:
+            return False
+
+        return None
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
         cleaned = text.strip()

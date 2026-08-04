@@ -113,3 +113,19 @@ def test_skin_filter_response_treats_body_area_as_valid() -> None:
     )
 
     assert payload["is_valid_skin_image"] is True
+
+
+def test_skin_filter_response_accepts_non_json_human_skin_answer() -> None:
+    payload = GeminiVisualClient().skin_filter_response_from_text(
+        "Ya, ini foto kulit manusia pada lengan dengan bercak putih seperti vitiligo."
+    )
+
+    assert payload["is_valid_skin_image"] is True
+
+
+def test_skin_filter_response_rejects_non_json_clear_non_skin_answer() -> None:
+    payload = GeminiVisualClient().skin_filter_response_from_text(
+        "False. Gambar ini adalah dokumen di layar, bukan kulit manusia."
+    )
+
+    assert payload["is_valid_skin_image"] is False
