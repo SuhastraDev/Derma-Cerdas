@@ -9,7 +9,7 @@ from pathlib import Path
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(AI_SERVICE_ROOT))
 
-from app.services.gemini_service import GeminiVisualClient
+from app.services.groq_service import GroqVisualClient
 
 
 def main() -> None:
@@ -22,7 +22,7 @@ def main() -> None:
         raise SystemExit(f"Image not found: {image_path}")
 
     encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
-    result = GeminiVisualClient().validate_skin_image(encoded)
+    result = GroqVisualClient().validate_skin_image(encoded)
     print(json.dumps(result, ensure_ascii=True, indent=2))
 
 

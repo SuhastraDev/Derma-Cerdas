@@ -3,11 +3,11 @@ from __future__ import annotations
 from app.schemas import AnalyzeImageRequest, AnalyzeImageResponse, ImageValidationResponse
 from app.services.class_mapping import allowed_candidate_classes
 from app.services.dataset_visual_index import DatasetVisualIndex
-from app.services.gemini_service import GeminiVisualClient, normalize_candidates
+from app.services.groq_service import GroqVisualClient, normalize_candidates
 
 
 class VisualAnalysisService:
-    def __init__(self, client: GeminiVisualClient, dataset_index: DatasetVisualIndex | None = None) -> None:
+    def __init__(self, client: GroqVisualClient, dataset_index: DatasetVisualIndex | None = None) -> None:
         self.client = client
         self.dataset_index = dataset_index or DatasetVisualIndex()
 

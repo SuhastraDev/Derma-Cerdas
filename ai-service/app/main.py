@@ -6,7 +6,7 @@ from app.config import settings
 from app.schemas import AnalyzeImageRequest, AnalyzeImageResponse, ImageValidationRequest, ImageValidationResponse
 from app.services.analysis_service import VisualAnalysisService
 from app.services.dataset_visual_index import DatasetVisualIndex
-from app.services.gemini_service import GeminiVisualClient
+from app.services.groq_service import GroqVisualClient
 from app.services.image_validation import ImageValidationError, ImageValidator
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -45,5 +45,5 @@ def analyze_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
     if not validation.is_valid:
         raise HTTPException(status_code=422, detail="Gambar tidak valid untuk dianalisis.")
 
-    service = VisualAnalysisService(GeminiVisualClient())
+    service = VisualAnalysisService(GroqVisualClient())
     return service.analyze(payload, validation)

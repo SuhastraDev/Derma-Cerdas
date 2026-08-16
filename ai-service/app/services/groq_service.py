@@ -1,20 +1,22 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
-from io import BytesIO
 from typing import Any
 
-from PIL import Image
+import httpx
 
 from app.config import settings
 from app.schemas import VisualCandidate
 from app.services.class_mapping import allowed_candidate_classes, normalize_class_name, resolve_mapping
 from app.services.image_validation import ImageValidator
 
+GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-class GeminiVisualClient:
-    provider = "gemini"
+
+class GroqVisualClient:
+    provider = "groq"
 
     def analyze(
         self,
@@ -24,10 +26,10 @@ class GeminiVisualClient:
     ) -> dict[str, Any]:
         classes = allowed_candidate_classes(candidate_classes)
 
-        if settings.ai_mock_mode or not settings.gemini_api_key:
+        if settings.ai_mock_mode or not settings.groq_api_key:
             return self.mock_response(classes)
 
-        return self.gemini_response(image_base64, classes, dataset_matches or [])
+        return self.groq_response(image_base64, classes, dataset_matches or [])
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
         return {
@@ -40,36 +42,26 @@ class GeminiVisualClient:
             "raw_response": {"mode": "mock"},
         }
 
-    def gemini_response(
+    def groq_response(
         self,
         image_base64: str,
         classes: list[str],
         dataset_matches: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        try:
-            from google import genai
-        except ImportError as exc:
-            raise RuntimeError("Package google-genai belum terinstall.") from exc
-
-        raw = ImageValidator().decode_base64(image_base64)
-        image = Image.open(BytesIO(raw))
-        client = genai.Client(api_key=settings.gemini_api_key)
+        data_url = self.image_data_url(image_base64)
         prompt = self.prompt(classes, dataset_matches)
 
         try:
-            response = client.models.generate_content(
-                model=settings.gemini_model_name,
-                contents=[prompt, image],
-            )
+            body = self.chat_completion(prompt, data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Gemini API")
+            return self.provider_error_response(exc, "Groq API")
 
-        text = getattr(response, "text", "") or ""
+        text = self.completion_text(body)
 
         return self.response_from_text(text)
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
-        if settings.ai_mock_mode or not settings.gemini_api_key:
+        if settings.ai_mock_mode or not settings.groq_api_key:
             return {
                 "provider_status": "mock_mode",
                 "is_valid_skin_image": False,
@@ -77,61 +69,71 @@ class GeminiVisualClient:
                 "raw_response": {"mode": "mock"},
             }
 
-        try:
-            from google import genai
-        except ImportError as exc:
-            raise RuntimeError("Package google-genai belum terinstall.") from exc
-
-        raw = ImageValidator().decode_base64(image_base64)
-        image = Image.open(BytesIO(raw))
-        client = genai.Client(api_key=settings.gemini_api_key)
+        data_url = self.image_data_url(image_base64)
 
         try:
-            response = client.models.generate_content(
-                model=settings.gemini_model_name,
-                contents=[self.skin_filter_prompt(), image],
-                config=self.skin_filter_config(),
-            )
+            body = self.chat_completion(self.skin_filter_prompt(), data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Gemini skin filter")
+            return self.provider_error_response(exc, "Groq skin filter")
 
-        text = getattr(response, "text", "") or ""
+        text = self.completion_text(body)
 
         return self.skin_filter_response_from_text(text)
 
-    def skin_filter_config(self) -> Any:
-        from google.genai import types
+    def image_data_url(self, image_base64: str) -> str:
+        raw = ImageValidator().decode_base64(image_base64)
+        mime_type = ImageValidator().detect_mime_type(raw) or "image/jpeg"
+        encoded = base64.b64encode(raw).decode("ascii")
 
-        return types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema={
-                "type": "object",
-                "properties": {
-                    "contains_human_body_part": {"type": "boolean"},
-                    "contains_visible_skin": {"type": "boolean"},
-                    "is_valid_skin_image": {"type": "boolean"},
-                    "skin_evidence_score": {"type": "number"},
-                    "reason": {"type": "string"},
-                    "warnings": {"type": "array", "items": {"type": "string"}},
-                },
-                "required": [
-                    "contains_human_body_part",
-                    "contains_visible_skin",
-                    "is_valid_skin_image",
-                    "skin_evidence_score",
-                    "reason",
-                    "warnings",
+        return f"data:{mime_type};base64,{encoded}"
+
+    def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
+        response = httpx.post(
+            GROQ_CHAT_COMPLETIONS_URL,
+            headers={
+                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.groq_model_name,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": image_data_url}},
+                        ],
+                    }
                 ],
             },
+            timeout=60.0,
         )
+        response.raise_for_status()
+
+        return response.json()
+
+    def completion_text(self, body: dict[str, Any]) -> str:
+        choices = body.get("choices", [])
+
+        if not choices:
+            return ""
+
+        return choices[0].get("message", {}).get("content", "") or ""
 
     def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
-        error = str(exception)
+        error = self.describe_http_error(exception)
         normalized = error.lower()
-        quota_exceeded = "429" in normalized or "resource_exhausted" in normalized or "quota exceeded" in normalized
+        quota_exceeded = (
+            "429" in normalized
+            or "rate_limit" in normalized
+            or "rate limit" in normalized
+            or "quota" in normalized
+        )
         provider_status = "quota_exceeded" if quota_exceeded else "unavailable"
         warning = (
-            "Kuota Gemini API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan kuota aktif."
+            "Kuota/limit Groq API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan limit aktif."
             if quota_exceeded
             else f"{operation} sedang tidak tersedia. Coba kembali beberapa saat lagi."
         )
@@ -144,9 +146,20 @@ class GeminiVisualClient:
             "raw_response": {
                 "error": error,
                 "error_code": provider_status,
-                "model": settings.gemini_model_name,
+                "model": settings.groq_model_name,
             },
         }
+
+    def describe_http_error(self, exception: Exception) -> str:
+        response = getattr(exception, "response", None)
+
+        if response is not None:
+            try:
+                return f"{response.status_code} {response.text}"
+            except Exception:
+                pass
+
+        return str(exception)
 
     def response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
@@ -163,7 +176,7 @@ class GeminiVisualClient:
             "warnings": parsed.get("warnings", []),
             "raw_response": {
                 "text": text,
-                "model": settings.gemini_model_name,
+                "model": settings.groq_model_name,
                 "skin_evidence_score": skin_evidence_score,
             },
         }
@@ -196,7 +209,7 @@ class GeminiVisualClient:
             "Sistem lokal juga menghitung kemiripan warna, pola spasial, dan tekstur terhadap centroid gambar dataset. "
             f"Hint retrieval dataset: {retrieval_hints}. "
             "Hint ini hanya shortlist pendukung, bukan diagnosis; abaikan bila bertentangan dengan tampilan gambar. "
-            "Balas hanya JSON valid dengan struktur: "
+            "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
             '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
             '"reason": "alasan visual singkat"}], "warnings": []}. '
@@ -225,13 +238,15 @@ class GeminiVisualClient:
             "kulit kepala, atau lipatan tubuh. Contoh tidak valid: dokumen, tangkapan layar, makanan, kendaraan, dan pemandangan. "
             "Nilai contains_human_body_part dan contains_visible_skin secara terpisah sebelum menyimpulkan. "
             "Jika keduanya true maka is_valid_skin_image juga harus true, walaupun penyakit tidak dikenali. "
-            "Balas sesuai schema JSON yang diberikan."
+            "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
+            '{"contains_human_body_part": true, "contains_visible_skin": true, "is_valid_skin_image": true, '
+            '"skin_evidence_score": 0.9, "reason": "alasan singkat", "warnings": []}.'
         )
 
     def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
         parse_failed = any(
-            warning.startswith("Respons Gemini")
+            warning.startswith("Respons Groq")
             for warning in parsed.get("warnings", [])
         )
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
@@ -249,7 +264,7 @@ class GeminiVisualClient:
         warnings = parsed.get("warnings", [])
 
         if parse_failed and text_signal is not None:
-            warnings = ["Respons Gemini skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
+            warnings = ["Respons Groq skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
 
         return {
             "provider_status": "ok",
@@ -257,7 +272,7 @@ class GeminiVisualClient:
             "warnings": warnings,
             "raw_response": {
                 "text": text,
-                "model": settings.gemini_model_name,
+                "model": settings.groq_model_name,
                 "skin_evidence_score": skin_evidence_score,
                 "contains_human_body_part": parsed.get("contains_human_body_part"),
                 "contains_visible_skin": parsed.get("contains_visible_skin"),
@@ -327,14 +342,14 @@ class GeminiVisualClient:
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Gemini tidak berbentuk JSON valid."],
+                "warnings": ["Respons Groq tidak berbentuk JSON valid."],
             }
 
         if not isinstance(data, dict):
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Gemini tidak sesuai struktur yang diminta."],
+                "warnings": ["Respons Groq tidak sesuai struktur yang diminta."],
             }
 
         return data
@@ -367,7 +382,7 @@ def normalize_candidates(
                 dataset_class_name=mapping.dataset_class_name if mapping else canonical_name,
                 local_disease_code=mapping.local_disease_code if mapping else None,
                 visual_score=round(score, 4),
-                reason=str(raw.get("reason") or "Kandidat visual dari Gemini."),
+                reason=str(raw.get("reason") or "Kandidat visual dari Groq."),
             )
         )
 

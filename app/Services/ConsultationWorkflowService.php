@@ -114,7 +114,7 @@ class ConsultationWorkflowService
     private function visualValidationMessage(array $visualAnalysis): string
     {
         if (($visualAnalysis['provider_status'] ?? null) === 'quota_exceeded') {
-            return 'Kuota analisis visual Gemini sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan kuota aktif.';
+            return 'Kuota/limit analisis visual Groq sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan limit aktif.';
         }
 
         if ($visualAnalysis['validation_status'] === 'not_configured') {
