@@ -77,6 +77,9 @@ class AiVisualService
                 'raw_error' => $body['raw_response']['error']
                     ?? $body['raw_response']['skin_filter']['error']
                     ?? null,
+                'primary_completion_text' => isset($body['raw_response']['text'])
+                    ? mb_substr((string) $body['raw_response']['text'], 0, 800)
+                    : null,
             ]);
 
             return [
