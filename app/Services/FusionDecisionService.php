@@ -2,187 +2,203 @@
 
 namespace App\Services;
 
-use App\Models\DatasetClassMapping;
 use App\Models\Disease;
-use App\Models\Setting;
 
+/**
+ * Rule-Based Decision-Level Fusion (Tabel 3.13, Subbab 3.2.3.5 naskah skripsi).
+ *
+ * Menggabungkan kandidat penyakit hasil analisis visual (Pv) dengan kandidat
+ * penyakit berkeyakinan tertinggi hasil Forward Chaining + Certainty Factor
+ * (Pt, CFt) melalui aturan F01-F07, bukan rata-rata berbobot (weighted fusion).
+ */
 class FusionDecisionService
 {
+    private const HIGH_CF = 0.60;
+
+    private const MEDIUM_CF = 0.40;
+
+    /**
+     * @param  Disease  $textualDisease  Pt: kandidat teks berkeyakinan tertinggi.
+     * @param  float  $textualCf  CFt: nilai Certainty Factor kandidat teks tersebut.
+     * @param  Disease|null  $visualDisease  Pv: kandidat visual teratas, null jika tidak ada (F06).
+     * @param  float  $visualScore  Skor kandidat visual teratas (0 jika Pv null).
+     * @param  bool  $visualAvailable  False jika citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup (F06).
+     * @param  array{has_red_flags?: bool}  $redFlagResult
+     */
     public function decide(
-        Disease $disease,
-        float $visualScore,
+        Disease $textualDisease,
         float $textualCf,
-        array $redFlagResult = [],
-        ?float $visualWeight = null,
-        ?float $textWeight = null,
-        ?float $threshold = null,
-        bool $hasValidatedVisual = true
+        ?Disease $visualDisease,
+        float $visualScore,
+        bool $visualAvailable,
+        array $redFlagResult = []
     ): array {
-        $weights = $this->weights($visualWeight, $textWeight);
-        $threshold ??= $this->settingFloat('decision_threshold', 0.6);
-
-        $visualScore = $this->clamp($visualScore);
         $textualCf = $this->clamp($textualCf);
-        $fusionScore = $this->round(($weights['visual'] * $visualScore) + ($weights['text'] * $textualCf));
+        $visualScore = $this->clamp($visualScore);
         $hasRedFlags = (bool) ($redFlagResult['has_red_flags'] ?? false);
-        $datasetMapping = $this->datasetMappingFor($disease);
 
-        $action = $this->resolveAction($disease, $fusionScore, $threshold, $hasRedFlags, $datasetMapping);
+        [$ruleCode, $action] = $this->resolveRule(
+            $textualDisease,
+            $textualCf,
+            $visualDisease,
+            $visualAvailable,
+            $hasRedFlags
+        );
 
         return [
-            'disease' => $disease,
+            'disease' => $textualDisease,
             'visual_score' => $visualScore,
             'textual_cf' => $textualCf,
-            'fusion_score' => $fusionScore,
-            'fusion_score_percent' => $this->round($fusionScore * 100),
-            'threshold' => $threshold,
-            'weights' => $weights,
+            'fusion_score' => $textualCf,
+            'fusion_score_percent' => $this->round($textualCf * 100),
+            'fusion_rule_code' => $ruleCode,
             'action' => $action,
-            'can_recommend_medicine' => $action === 'recommend_otc',
+            'can_recommend_medicine' => in_array($action, [
+                'recommend_otc',
+                'recommend_otc_observe',
+                'recommend_otc_mismatch',
+                'recommend_otc_unsupported',
+            ], true),
             'explanation' => $this->explanation(
-                $disease,
+                $textualDisease,
+                $visualDisease,
+                $ruleCode,
                 $action,
-                $visualScore,
                 $textualCf,
-                $fusionScore,
-                $threshold,
-                $hasRedFlags,
-                $datasetMapping,
-                $hasValidatedVisual
+                $visualAvailable,
+                $hasRedFlags
             ),
         ];
     }
 
     /**
-     * @return array{visual: float, text: float}
+     * @return array{0: string, 1: string}
      */
-    private function weights(?float $visualWeight, ?float $textWeight): array
-    {
-        $visual = $visualWeight ?? $this->settingFloat('visual_weight', 0.4);
-        $text = $textWeight ?? $this->settingFloat('text_weight', 0.6);
-        $total = $visual + $text;
-
-        if ($total <= 0.0) {
-            return ['visual' => 0.4, 'text' => 0.6];
+    private function resolveRule(
+        Disease $textualDisease,
+        float $textualCf,
+        ?Disease $visualDisease,
+        bool $visualAvailable,
+        bool $hasRedFlags
+    ): array {
+        // F07: tanda bahaya menggantikan seluruh aturan lainnya.
+        if ($hasRedFlags) {
+            return ['F07', 'refer'];
         }
 
-        return [
-            'visual' => $this->round($visual / $total),
-            'text' => $this->round($text / $total),
-        ];
+        // F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup.
+        if (! $visualAvailable || ! $visualDisease) {
+            return $this->textOnlyRule($textualCf);
+        }
+
+        $matches = $visualDisease->is($textualDisease);
+
+        if ($matches) {
+            if ($textualCf >= self::HIGH_CF) {
+                return ['F01', 'recommend_otc'];
+            }
+
+            if ($textualCf >= self::MEDIUM_CF) {
+                return ['F02', 'recommend_otc_observe'];
+            }
+
+            return ['F03', 'insufficient_confidence'];
+        }
+
+        if ($textualCf >= self::HIGH_CF) {
+            return ['F04', 'recommend_otc_mismatch'];
+        }
+
+        return ['F05', 'refer'];
     }
 
-    private function resolveAction(
-        Disease $disease,
-        float $fusionScore,
-        float $threshold,
-        bool $hasRedFlags,
-        ?DatasetClassMapping $datasetMapping
-    ): string {
-        if ($hasRedFlags) {
-            return 'refer';
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function textOnlyRule(float $textualCf): array
+    {
+        if ($textualCf >= self::HIGH_CF) {
+            return ['F06', 'recommend_otc_unsupported'];
         }
 
-        if ($datasetMapping && $datasetMapping->scope_category === 'rujuk') {
-            return 'refer';
+        if ($textualCf >= self::MEDIUM_CF) {
+            return ['F06', 'recommend_otc_observe'];
         }
 
-        if ($disease->default_action === 'refer' || $disease->severity_scope === 'danger') {
-            return 'refer';
-        }
-
-        if ($fusionScore < $threshold) {
-            return 'insufficient_confidence';
-        }
-
-        if ($disease->default_action === 'educate_only') {
-            return 'educate_only';
-        }
-
-        if ($datasetMapping && ! $datasetMapping->boleh_rekomendasi_obat) {
-            return 'educate_only';
-        }
-
-        return 'recommend_otc';
+        return ['F06', 'insufficient_confidence'];
     }
 
     private function explanation(
-        Disease $disease,
+        Disease $textualDisease,
+        ?Disease $visualDisease,
+        string $ruleCode,
         string $action,
-        float $visualScore,
         float $textualCf,
-        float $fusionScore,
-        float $threshold,
-        bool $hasRedFlags,
-        ?DatasetClassMapping $datasetMapping,
-        bool $hasValidatedVisual
+        bool $visualAvailable,
+        bool $hasRedFlags
     ): string {
-        if ($hasValidatedVisual) {
-            $base = sprintf(
-                'Kemungkinan awal %s memiliki skor visual %.1f%%, skor gejala %.1f%%, dan skor gabungan %.1f%%.',
-                $disease->name_indonesian ?: $disease->name,
-                $visualScore * 100,
-                $textualCf * 100,
-                $fusionScore * 100
-            );
-        } else {
-            $base = sprintf(
-                'Kemungkinan awal %s dihitung dari skor gejala %.1f%% karena validasi visual belum tersedia.',
-                $disease->name_indonesian ?: $disease->name,
-                $textualCf * 100
-            );
-        }
+        $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
+        $cfPercent = sprintf('%.1f%%', $textualCf * 100);
 
         if ($hasRedFlags) {
-            return $base.' Rekomendasi obat ditolak karena red flags terdeteksi.';
-        }
-
-        if ($datasetMapping && $datasetMapping->scope_category === 'rujuk') {
-            return $base.' Class dataset ini masuk kategori rujuk, sehingga pengguna diarahkan ke tenaga kesehatan.';
-        }
-
-        if ($action === 'insufficient_confidence') {
-            return $base.sprintf(
-                ' Skor belum mencapai threshold %.1f%%, sehingga hasil belum cukup meyakinkan untuk rekomendasi obat.',
-                $threshold * 100
+            return sprintf(
+                'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan (kandidat gejala teratas: %s, CF %s).',
+                $diseaseName,
+                $cfPercent
             );
         }
 
-        if ($action === 'educate_only') {
-            return $base.' Sistem hanya memberi edukasi karena kondisi atau mapping belum aman untuk rekomendasi obat.';
+        if (! $visualAvailable || ! $visualDisease) {
+            return match ($action) {
+                'recommend_otc_unsupported' => sprintf(
+                    'Aturan F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup, sehingga keputusan disandarkan pada gejala (%s, CF %s) dengan status keyakinan terbatas karena tidak didukung analisis visual.',
+                    $diseaseName,
+                    $cfPercent
+                ),
+                'recommend_otc_observe' => sprintf(
+                    'Aturan F06: penilaian visual tidak tersedia. Gejala mengarah ke %s dengan keyakinan sedang (CF %s); rekomendasi obat disertai anjuran observasi dan konsultasi apabila tidak membaik.',
+                    $diseaseName,
+                    $cfPercent
+                ),
+                default => sprintf(
+                    'Aturan F06: penilaian visual tidak tersedia dan keyakinan gejala terhadap %s masih rendah (CF %s), sehingga belum diberikan rekomendasi obat.',
+                    $diseaseName,
+                    $cfPercent
+                ),
+            };
         }
 
-        return $base.' Skor melewati threshold dan tidak ada red flags, sehingga rekomendasi OBT dapat ditampilkan dengan peringatan penggunaan.';
-    }
+        $visualName = $visualDisease->name_indonesian ?: $visualDisease->name;
 
-    private function datasetMappingFor(Disease $disease): ?DatasetClassMapping
-    {
-        if ($disease->relationLoaded('datasetMappings')) {
-            return $disease->datasetMappings->first();
-        }
-
-        return $disease->datasetMappings()->first();
-    }
-
-    private function settingFloat(string $key, float $default): float
-    {
-        $setting = Setting::query()->where('key', $key)->first();
-
-        if (! $setting) {
-            return $default;
-        }
-
-        $value = $setting->value;
-
-        if (is_array($value) && array_key_exists('value', $value)) {
-            return (float) $value['value'];
-        }
-
-        if (is_numeric($value)) {
-            return (float) $value;
-        }
-
-        return $default;
+        return match ($ruleCode) {
+            'F01' => sprintf(
+                'Aturan F01: hasil visual dan gejala sama-sama mengarah ke %s dengan keyakinan tinggi (CF %s), sehingga rekomendasi Obat Bebas Terbatas ditampilkan.',
+                $diseaseName,
+                $cfPercent
+            ),
+            'F02' => sprintf(
+                'Aturan F02: hasil visual dan gejala sama-sama mengarah ke %s dengan keyakinan sedang (CF %s); rekomendasi obat disertai anjuran observasi dan konsultasi apabila keluhan tidak membaik.',
+                $diseaseName,
+                $cfPercent
+            ),
+            'F03' => sprintf(
+                'Aturan F03: hasil visual dan gejala sama-sama mengarah ke %s tetapi keyakinan masih rendah (CF %s), sehingga sistem meminta pengguna melengkapi gejala atau berkonsultasi.',
+                $diseaseName,
+                $cfPercent
+            ),
+            'F04' => sprintf(
+                'Aturan F04: hasil visual mengarah ke %s sedangkan gejala mengarah ke %s dengan keyakinan tinggi (CF %s). Keputusan disandarkan pada hasil gejala disertai catatan ketidaksesuaian dan anjuran konsultasi.',
+                $visualName,
+                $diseaseName,
+                $cfPercent
+            ),
+            default => sprintf(
+                'Aturan F05: hasil visual (%s) dan gejala (%s, CF %s) tidak sesuai serta keyakinan gejala belum tinggi, sehingga mekanisme safety-net menahan rekomendasi obat dan mengarahkan pengguna berkonsultasi.',
+                $visualName,
+                $diseaseName,
+                $cfPercent
+            ),
+        };
     }
 
     private function clamp(float $value): float

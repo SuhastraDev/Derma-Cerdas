@@ -141,6 +141,7 @@ class ConsultationController extends Controller
                 'visual_score' => (float) $finalResult->visual_score,
                 'fusion_score' => (float) $finalResult->fusion_score,
                 'action' => $finalResult->action,
+                'fusion_rule_code' => $finalResult->fusion_rule_code,
                 'explanation' => $finalResult->explanation,
                 'recommendations' => $finalResult->recommendations_snapshot ?? [],
             ] : null,

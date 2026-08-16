@@ -61,22 +61,21 @@ type FormData = {
     red_flags: Record<string, boolean>;
 };
 
+// Skala Certainty Factor pengguna mengikuti Tabel 3.10 naskah skripsi (Praditya dkk, 2024).
 const certaintyLabels: Record<number, string> = {
-    0: 'Tidak ada',
-    0.2: 'Ringan',
-    0.4: 'Sedang',
-    0.6: 'Jelas',
-    0.8: 'Sangat jelas',
-    1: 'Dominan',
+    0: 'Tidak mengalami',
+    0.4: 'Sedikit yakin',
+    0.6: 'Cukup yakin',
+    0.8: 'Yakin',
+    1: 'Sangat yakin',
 };
 
 const symptomChoices = [
-    { value: 0, label: 'Tidak ada', helper: 'Tidak saya rasakan' },
-    { value: 0.2, label: 'Ringan', helper: 'Ada sedikit' },
-    { value: 0.4, label: 'Sedang', helper: 'Cukup terasa' },
-    { value: 0.6, label: 'Jelas', helper: 'Saya yakin ada' },
-    { value: 0.8, label: 'Sangat jelas', helper: 'Sangat terasa' },
-    { value: 1, label: 'Dominan', helper: 'Keluhan utama' },
+    { value: 0, label: 'Tidak mengalami', helper: 'Tidak saya rasakan' },
+    { value: 0.4, label: 'Sedikit yakin', helper: 'Ada sedikit, belum yakin' },
+    { value: 0.6, label: 'Cukup yakin', helper: 'Cukup terasa' },
+    { value: 0.8, label: 'Yakin', helper: 'Saya yakin ada' },
+    { value: 1, label: 'Sangat yakin', helper: 'Sangat jelas dirasakan' },
 ];
 
 const steps = [

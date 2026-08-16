@@ -56,6 +56,28 @@ class ComplaintExtractionService
             'WHITE_BROWN_PATCHES' => [0.75, ['putih', 'cokelat', 'coklat', 'panu', 'bercak putih', 'bercak cokelat']],
             'BURNING_STINGING' => [0.55, ['perih', 'panas', 'pedih', 'terbakar', 'menyengat']],
             'RECURRENT_OR_DAYS' => [0.55, ['hari', 'minggu', 'bulan', 'sejak', 'kambuh', 'berulang', 'lama']],
+
+            // Gejala G01-G20 sesuai Tabel 3.4 naskah skripsi (lima penyakit ruang lingkup).
+            'G01' => [0.6, ['merah', 'kemerahan']],
+            'G02' => [0.6, ['gatal', 'digaruk', 'garuk']],
+            'G03' => [0.6, ['bersisik', 'sisik', 'kasar', 'mengelupas', 'pecah pecah']],
+            'G04' => [0.5, ['lepuh', 'melepuh', 'bintil berair', 'gelembung']],
+            'G05' => [0.5, ['bengkak ringan', 'sedikit bengkak']],
+            'G06' => [0.8, ['melingkar', 'lingkar', 'cincin', 'kurap']],
+            'G07' => [0.7, ['tengah lebih bersih', 'tengah bersih', 'tengah normal']],
+            'G08' => [0.7, ['batas jelas', 'tepi jelas', 'pinggir jelas', 'tepi merah']],
+            'G09' => [0.7, ['sela jari', 'pecah-pecah kaki', 'sela jari kaki']],
+            'G10' => [0.7, ['lipatan paha', 'selangkangan']],
+            'G11' => [0.8, ['bercak putih', 'bercak cokelat', 'bercak coklat', 'panu']],
+            'G12' => [0.6, ['gatal berkeringat', 'gatal saat keringat', 'gatal setelah keringat', 'bertambah setelah berkeringat']],
+            'G13' => [0.7, ['kontak sabun', 'kontak kosmetik', 'kontak logam', 'kontak tanaman', 'setelah pakai', 'pemicu']],
+            'G14' => [0.5, ['perih', 'terbakar', 'panas']],
+            'G15' => [0.7, ['telapak kaki']],
+            'G16' => [0.5, ['di badan', 'pada badan', 'di lengan', 'pada lengan']],
+            'G17' => [0.4, ['nyeri ringan', 'sedikit nyeri']],
+            'G18' => [0.5, ['kulit kering', 'kering']],
+            'G19' => [0.6, ['melebar', 'meluas', 'bertambah luas']],
+            'G20' => [0.5, ['area yang terkena', 'area yang kena', 'hanya di area terpapar']],
         ];
 
         $evidence = [];
@@ -83,9 +105,9 @@ class ComplaintExtractionService
             'FEVER_HIGH' => ['demam', 'panas tinggi', 'meriang'],
             'SEVERE_PAIN' => ['nyeri hebat', 'sangat nyeri', 'sakit sekali', 'nyeri sekali'],
             'FAST_SPREADING_SWELLING' => ['menyebar cepat', 'cepat menyebar', 'bengkak menyebar', 'membesar cepat'],
-            'PUS_OR_WIDE_INFECTION' => ['nanah', 'bernanah', 'infeksi', 'busuk'],
+            'PUS_OR_WIDE_INFECTION' => ['nanah', 'bernanah', 'terinfeksi', 'infeksi berat', 'busuk'],
             'OPEN_WOUND_LARGE' => ['luka terbuka', 'luka luas'],
-            'BLACKENED_SKIN' => ['menghitam', 'hitam', 'jaringan mati'],
+            'BLACKENED_SKIN' => ['kulit menghitam', 'kulit hitam', 'jaringan mati', 'jaringan menghitam'],
             'WIDESPREAD_RASH' => ['seluruh tubuh', 'hampir semua badan', 'ruam luas'],
             'BREATHING_OR_FACE_SWELLING' => ['sesak', 'susah napas', 'bibir bengkak', 'wajah bengkak', 'mata bengkak'],
         ];
@@ -143,7 +165,8 @@ class ComplaintExtractionService
         $position = strpos($text, $term);
 
         if ($position !== false) {
-            $beforeTerm = substr($text, max(0, $position - 24), $position);
+            $windowStart = max(0, $position - 24);
+            $beforeTerm = substr($text, $windowStart, $position - $windowStart);
 
             if (preg_match('/\b(tidak|tanpa|bukan|belum|gak|ga|nggak)\b/', $beforeTerm)) {
                 return true;

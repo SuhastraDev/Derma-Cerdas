@@ -287,61 +287,42 @@ class ConsultationWorkflowService
         array $redFlagResult,
         bool $hasValidatedVisual
     ): ConsultationFinalResult {
-        if (! $textualRankings && ! $visualCandidates) {
+        if (! $textualRankings) {
             /** @var Disease $fallbackDisease */
             $fallbackDisease = Disease::query()->where('is_active', true)->firstOrFail();
             $textualRankings = [['disease' => $fallbackDisease, 'textual_cf' => 0.0]];
         }
 
-        $candidateDiseases = collect($textualRankings)
-            ->pluck('disease')
-            ->merge(collect($visualCandidates)->pluck('disease'))
-            ->filter()
-            ->unique(fn (Disease $disease): int => $disease->id)
-            ->values();
+        // Pt / CFt: kandidat teks berkeyakinan tertinggi hasil Forward Chaining + Certainty Factor.
+        $topTextual = $textualRankings[0];
+        /** @var Disease $textualDisease */
+        $textualDisease = $topTextual['disease'];
+        $textualCf = (float) ($topTextual['textual_cf'] ?? 0.0);
 
-        $decisions = $candidateDiseases
-            ->map(function (Disease $candidateDisease) use ($textualRankings, $visualCandidates, $redFlagResult, $hasValidatedVisual): array {
-                $textualCandidate = collect($textualRankings)
-                    ->first(fn (array $ranking): bool => $ranking['disease']->is($candidateDisease));
-                $visualCandidate = collect($visualCandidates)
-                    ->first(fn (array $candidate): bool => $candidate['disease']->is($candidateDisease));
+        // Pv: kandidat visual teratas. Kosong berarti F06 (citra tak dapat dianalisis / di luar ruang lingkup).
+        $topVisual = $visualCandidates[0] ?? null;
+        $visualDisease = $topVisual ? $topVisual['disease'] : null;
+        $visualScore = $topVisual ? (float) $topVisual['visual_score'] : 0.0;
 
-                return [
-                    'disease' => $candidateDisease,
-                    'decision' => $this->fusionDecisionService->decide(
-                        disease: $candidateDisease->loadMissing('datasetMappings'),
-                        visualScore: (float) ($visualCandidate['visual_score'] ?? 0.0),
-                        textualCf: (float) ($textualCandidate['textual_cf'] ?? 0.0),
-                        redFlagResult: $redFlagResult,
-                        visualWeight: $hasValidatedVisual ? null : 0.0,
-                        textWeight: $hasValidatedVisual ? null : 1.0,
-                        hasValidatedVisual: $hasValidatedVisual,
-                    ),
-                ];
-            })
-            ->sortByDesc(fn (array $item): float => (float) $item['decision']['fusion_score'])
-            ->values();
-
-        if ($decisions->isEmpty()) {
-            throw ValidationException::withMessages([
-                'symptoms' => 'Data gejala dan visual belum cukup untuk membuat hasil awal. Pilih minimal satu gejala yang sesuai atau tulis keluhan lebih jelas.',
-            ]);
-        }
-
-        /** @var Disease $disease */
-        $disease = $decisions->first()['disease'];
-        $decision = $decisions->first()['decision'];
+        $decision = $this->fusionDecisionService->decide(
+            textualDisease: $textualDisease,
+            textualCf: $textualCf,
+            visualDisease: $visualDisease,
+            visualScore: $visualScore,
+            visualAvailable: $hasValidatedVisual && $topVisual !== null,
+            redFlagResult: $redFlagResult,
+        );
 
         return ConsultationFinalResult::query()->create([
             'consultation_id' => $consultation->id,
-            'disease_id' => $disease->id,
+            'disease_id' => $textualDisease->id,
             'textual_cf' => $decision['textual_cf'],
             'visual_score' => $decision['visual_score'],
             'fusion_score' => $decision['fusion_score'],
             'action' => $decision['action'],
+            'fusion_rule_code' => $decision['fusion_rule_code'],
             'explanation' => $decision['explanation'],
-            'recommendations_snapshot' => $this->recommendationsSnapshot($disease, $decision['can_recommend_medicine']),
+            'recommendations_snapshot' => $this->recommendationsSnapshot($textualDisease, $decision['can_recommend_medicine']),
         ]);
     }
 

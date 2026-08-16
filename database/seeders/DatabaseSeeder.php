@@ -31,6 +31,23 @@ class DatabaseSeeder extends Seeder
         $this->seedRedFlags();
         $this->seedSettings();
         $this->seedDatasetMappings($diseases);
+
+        $naskahSymptoms = $this->seedNaskahSymptoms();
+        $this->seedNaskahRules($diseases, $naskahSymptoms);
+        $this->deactivateOrphanedSymptoms();
+    }
+
+    /**
+     * Gejala lama yang kehilangan seluruh keterkaitan aturan setelah rule base
+     * lima penyakit naskah diganti ke G01-G20 (Subbab 3.2.3.4). Dinonaktifkan
+     * agar tidak lagi ditanyakan ke pengguna tanpa memengaruhi hasil apa pun.
+     */
+    private function deactivateOrphanedSymptoms(): void
+    {
+        Symptom::query()
+            ->where('is_active', true)
+            ->whereDoesntHave('diseaseRules', fn ($query) => $query->whereHas('disease', fn ($q) => $q->where('is_active', true)))
+            ->update(['is_active' => false]);
     }
 
     private function seedAdminUser(): void
@@ -315,6 +332,131 @@ class DatabaseSeeder extends Seeder
             );
 
             $index++;
+        }
+    }
+
+    /**
+     * 20 gejala baku sesuai Tabel 3.4 naskah skripsi (kode G01-G20).
+     *
+     * @return array<string, Symptom>
+     */
+    private function seedNaskahSymptoms(): array
+    {
+        $rows = [
+            ['G01', 'Kulit kemerahan', 'Apakah kulit tampak kemerahan (erythema)?'],
+            ['G02', 'Gatal', 'Apakah area kulit terasa gatal (pruritus)?'],
+            ['G03', 'Kulit bersisik', 'Apakah kulit tampak bersisik (scaling)?'],
+            ['G04', 'Lepuh kecil berisi cairan', 'Apakah muncul lepuh kecil berisi cairan (vesicle)?'],
+            ['G05', 'Pembengkakan ringan', 'Apakah ada pembengkakan ringan (edema) pada area kulit?'],
+            ['G06', 'Lesi berbentuk cincin', 'Apakah ruam berbentuk seperti cincin atau lingkaran (annular lesion)?'],
+            ['G07', 'Bagian tengah lesi tampak lebih bersih', 'Apakah bagian tengah ruam tampak lebih bersih/normal dibanding tepinya (central clearing)?'],
+            ['G08', 'Batas lesi terlihat jelas', 'Apakah tepi atau batas ruam terlihat jelas (well-demarcated border)?'],
+            ['G09', 'Kulit pecah-pecah pada sela jari kaki', 'Apakah kulit pecah-pecah (fissure) di sela jari kaki?'],
+            ['G10', 'Lesi berada pada lipatan paha', 'Apakah keluhan berada pada lipatan paha (inguinal)?'],
+            ['G11', 'Bercak putih atau kecokelatan', 'Apakah ada bercak putih atau kecokelatan pada kulit?'],
+            ['G12', 'Gatal bertambah setelah berkeringat', 'Apakah gatal bertambah setelah berkeringat?'],
+            ['G13', 'Riwayat kontak dengan alergen', 'Apakah keluhan muncul setelah kontak sabun, kosmetik, logam, tanaman, atau bahan pemicu tertentu?'],
+            ['G14', 'Kulit terasa perih atau terbakar', 'Apakah kulit terasa perih atau seperti terbakar (burning sensation)?'],
+            ['G15', 'Lesi berada pada telapak kaki', 'Apakah keluhan berada pada telapak kaki (plantar)?'],
+            ['G16', 'Lesi berada pada badan atau lengan', 'Apakah keluhan berada pada badan atau lengan (trunk/extremity)?'],
+            ['G17', 'Rasa nyeri ringan pada lesi', 'Apakah terasa nyeri ringan pada area tersebut?'],
+            ['G18', 'Kulit terasa kering', 'Apakah kulit terasa kering (xerosis)?'],
+            ['G19', 'Lesi bertambah luas secara perlahan', 'Apakah ruam bertambah luas secara perlahan?'],
+            ['G20', 'Lesi hanya pada area yang terkena paparan', 'Apakah keluhan hanya muncul pada area yang terkena bahan pemicu (localized lesion)?'],
+        ];
+
+        $symptoms = [];
+
+        foreach ($rows as [$code, $name, $question]) {
+            $symptoms[$code] = Symptom::query()->updateOrCreate(
+                ['code' => $code],
+                [
+                    'name' => $name,
+                    'question' => $question,
+                    'input_type' => 'scale',
+                    'is_red_flag_candidate' => false,
+                    'is_active' => true,
+                ],
+            );
+        }
+
+        return $symptoms;
+    }
+
+    /**
+     * Matriks nilai CF pakar (Tabel 3.11) untuk lima penyakit ruang lingkup naskah skripsi
+     * (P01 Dermatitis Kontak Alergi, P02 Tinea Corporis, P03 Tinea Cruris, P04 Tinea Pedis,
+     * P05 Pityriasis/Tinea Versicolor). Nilai MB/MD diturunkan dari CF pakar mengikuti
+     * pedoman pengodean Tabel 3.8 (CF 0,80 -> MB 1,00/MD 0,20; CF 0,60 -> MB 0,80/MD 0,20;
+     * CF 0,40 -> MB 0,60/MD 0,20; CF 0,20 -> MB 0,40/MD 0,20), kecuali dua nilai adopsi
+     * langsung (CF 1,00 -> MB 1,00/MD 0,00) untuk G03 dan G11 pada P05. Gejala wajib
+     * (is_required) adalah gejala dengan CF pakar >= 0,80 sesuai Subbab 3.2.3.4 butir 4.
+     *
+     * Menggantikan seluruh basis_pengetahuan lama pada kelima penyakit ini agar konsisten
+     * dengan naskah; penyakit di luar ruang lingkup (Eczema, Urticaria, Candidiasis, dst.)
+     * tidak disentuh dan tetap memakai gejala/aturan lama sebagai cakupan tambahan.
+     *
+     * @param array<string, Disease> $diseases
+     * @param array<string, Symptom> $naskahSymptoms
+     */
+    private function seedNaskahRules(array $diseases, array $naskahSymptoms): void
+    {
+        $matrix = [
+            'ALLERGIC_CONTACT_DERMATITIS' => [ // P01
+                'G01' => 0.60, 'G02' => 0.60, 'G03' => 0.40, 'G04' => 0.60,
+                'G05' => 0.60, 'G13' => 0.80, 'G14' => 0.40, 'G20' => 0.60,
+            ],
+            'TINEA_CORPORIS' => [ // P02
+                'G01' => 0.60, 'G02' => 0.60, 'G03' => 0.80, 'G04' => 0.40,
+                'G06' => 0.80, 'G07' => 0.80, 'G08' => 0.80, 'G16' => 0.40, 'G19' => 0.80,
+            ],
+            'TINEA_CRURIS' => [ // P03
+                'G01' => 0.60, 'G02' => 0.60, 'G03' => 0.60, 'G06' => 0.80,
+                'G07' => 0.80, 'G08' => 0.80, 'G10' => 0.80, 'G12' => 0.40, 'G17' => 0.40, 'G19' => 0.40,
+            ],
+            'TINEA_PEDIS' => [ // P04
+                'G01' => 0.60, 'G02' => 0.60, 'G03' => 0.60, 'G04' => 0.60,
+                'G08' => 0.60, 'G09' => 0.80, 'G12' => 0.40, 'G14' => 0.40, 'G15' => 0.80, 'G18' => 0.40,
+            ],
+            'TINEA_VERSICOLOR' => [ // P05
+                'G01' => 0.40, 'G02' => 0.20, 'G03' => 1.00, 'G08' => 0.80,
+                'G11' => 1.00, 'G12' => 0.80, 'G16' => 0.60, 'G19' => 0.40,
+            ],
+        ];
+
+        foreach ($matrix as $diseaseCode => $symptomCfs) {
+            $disease = $diseases[$diseaseCode];
+
+            // Bersihkan basis_pengetahuan lama (kode gejala non-naskah) khusus penyakit ini
+            // agar rule base persis mengikuti Tabel 3.11, tanpa mengganggu penyakit lain.
+            DiseaseSymptomRule::query()
+                ->where('disease_id', $disease->id)
+                ->whereNotIn('symptom_id', collect($naskahSymptoms)->pluck('id')->all())
+                ->delete();
+
+            foreach ($symptomCfs as $symptomCode => $cf) {
+                [$mb, $md] = match (true) {
+                    $cf >= 1.00 => [1.00, 0.00],
+                    $cf >= 0.80 => [1.00, 0.20],
+                    $cf >= 0.60 => [0.80, 0.20],
+                    $cf >= 0.40 => [0.60, 0.20],
+                    default => [0.40, 0.20],
+                };
+
+                DiseaseSymptomRule::query()->updateOrCreate(
+                    [
+                        'disease_id' => $disease->id,
+                        'symptom_id' => $naskahSymptoms[$symptomCode]->id,
+                    ],
+                    [
+                        'mb' => $mb,
+                        'md' => $md,
+                        'expert_cf' => round($mb - $md, 2),
+                        'is_required' => $cf >= 0.80,
+                        'note' => 'Tabel 3.11 naskah skripsi (matriks nilai CF pakar), pengodean Tabel 3.8.',
+                    ],
+                );
+            }
         }
     }
 }

@@ -52,10 +52,6 @@ class AdaptiveQuestionService
                     });
             });
 
-        foreach (['ITCHING', 'RED_RASH', 'DRY_SCALY_SKIN', 'RECURRENT_OR_DAYS'] as $fallbackCode) {
-            $scores[$fallbackCode] = ($scores[$fallbackCode] ?? 0) + 0.25;
-        }
-
         $orderedCodes = collect($scores)
             ->sortDesc()
             ->keys()
@@ -63,7 +59,7 @@ class AdaptiveQuestionService
 
         if ($orderedCodes->count() < $min) {
             $orderedCodes = $orderedCodes
-                ->merge(Symptom::query()->where('is_active', true)->orderBy('id')->pluck('code'))
+                ->merge($this->fallbackSymptomCodes($orderedCodes->all(), $min - $orderedCodes->count()))
                 ->unique()
                 ->values();
         }
@@ -76,5 +72,31 @@ class AdaptiveQuestionService
             ->get(['id', 'code', 'name', 'question'])
             ->sortBy(fn (Symptom $symptom): int => array_search($symptom->code, $selectedCodes, true))
             ->values();
+    }
+
+    /**
+     * Fills remaining slots with symptoms not yet scored from complaint/visual evidence,
+     * ranked by how often diseases require them (a proxy for diagnostic value) and
+     * shuffled among ties so the fallback set is not the same fixed list every time.
+     *
+     * @param  array<int, string>  $excludeCodes
+     * @return array<int, string>
+     */
+    private function fallbackSymptomCodes(array $excludeCodes, int $needed): array
+    {
+        if ($needed <= 0) {
+            return [];
+        }
+
+        return Symptom::query()
+            ->where('is_active', true)
+            ->whereNotIn('code', $excludeCodes)
+            ->withCount(['diseaseRules as required_rule_count' => fn ($query) => $query->where('is_required', true)])
+            ->get(['id', 'code'])
+            ->shuffle()
+            ->sortByDesc('required_rule_count')
+            ->pluck('code')
+            ->take($needed)
+            ->all();
     }
 }

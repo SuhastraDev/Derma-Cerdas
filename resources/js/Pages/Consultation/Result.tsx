@@ -40,6 +40,7 @@ type FinalResult = {
     visual_score: number;
     fusion_score: number;
     action: string;
+    fusion_rule_code: string | null;
     explanation: string | null;
     recommendations: Array<{
         medicine_name: string;
@@ -104,8 +105,41 @@ function actionCopy(action: string | null): {
             eyebrow: 'Hasil awal aman bersyarat',
             tone: 'border-emerald-200 bg-emerald-50 text-emerald-950',
             iconTone: 'bg-emerald-700 text-white',
-            body: 'Skor melewati ambang dan tidak ada red flags. Ikuti aturan pakai umum, baca peringatan, dan hentikan bila keluhan memburuk.',
+            body: 'Hasil visual dan gejala sama-sama mengarah ke penyakit yang sama dengan keyakinan tinggi. Ikuti aturan pakai umum, baca peringatan, dan hentikan bila keluhan memburuk.',
             Icon: CheckCircle2,
+        };
+    }
+
+    if (action === 'recommend_otc_observe') {
+        return {
+            title: 'Swamedikasi dapat dicoba dengan observasi',
+            eyebrow: 'Keyakinan sedang',
+            tone: 'border-amber-200 bg-amber-50 text-amber-950',
+            iconTone: 'bg-amber-600 text-white',
+            body: 'Keyakinan hasil masih pada tingkat sedang. Rekomendasi obat tetap ditampilkan, tetapi amati perkembangan keluhan dan konsultasi bila tidak membaik.',
+            Icon: ClipboardCheck,
+        };
+    }
+
+    if (action === 'recommend_otc_unsupported') {
+        return {
+            title: 'Swamedikasi dapat dipertimbangkan (tanpa validasi visual)',
+            eyebrow: 'Keyakinan gejala tinggi, visual tidak tersedia',
+            tone: 'border-amber-200 bg-amber-50 text-amber-950',
+            iconTone: 'bg-amber-600 text-white',
+            body: 'Citra tidak dapat dianalisis atau kelas visual berada di luar ruang lingkup sistem, sehingga keputusan hanya disandarkan pada gejala. Perlakukan hasil ini dengan lebih hati-hati.',
+            Icon: ClipboardCheck,
+        };
+    }
+
+    if (action === 'recommend_otc_mismatch') {
+        return {
+            title: 'Swamedikasi dapat dipertimbangkan (hasil visual berbeda)',
+            eyebrow: 'Ketidaksesuaian modalitas',
+            tone: 'border-amber-200 bg-amber-50 text-amber-950',
+            iconTone: 'bg-amber-600 text-white',
+            body: 'Hasil analisis citra menunjukkan kemungkinan penyakit lain dibanding hasil gejala. Keputusan disandarkan pada gejala karena keyakinannya tinggi, tetapi konsultasi dianjurkan bila ragu.',
+            Icon: AlertTriangle,
         };
     }
 
@@ -247,6 +281,9 @@ export default function Result({
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-wide opacity-75">
                                 {action.eyebrow}
+                                {finalResult?.fusion_rule_code
+                                    ? ` · Aturan fusion ${finalResult.fusion_rule_code}`
+                                    : ''}
                             </p>
                             <h2 className="mt-1 text-2xl font-semibold">
                                 {action.title}

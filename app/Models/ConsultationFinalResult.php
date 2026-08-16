@@ -14,6 +14,7 @@ class ConsultationFinalResult extends Model
         'visual_score',
         'fusion_score',
         'action',
+        'fusion_rule_code',
         'explanation',
         'recommendations_snapshot',
     ];

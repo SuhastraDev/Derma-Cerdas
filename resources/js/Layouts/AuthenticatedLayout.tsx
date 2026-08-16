@@ -12,7 +12,6 @@ import {
     Menu,
     Pill,
     Search,
-    Settings,
     ShieldCheck,
     Stethoscope,
     UserRound,
@@ -96,14 +95,6 @@ const adminMenuGroups = [
                 icon: Database,
                 match: 'admin.resource.index',
                 resource: 'dataset-mappings',
-            },
-            {
-                href: 'admin.resource.index',
-                params: 'settings',
-                label: 'Pengaturan',
-                icon: Settings,
-                match: 'admin.resource.index',
-                resource: 'settings',
             },
             {
                 href: 'admin.resource.index',

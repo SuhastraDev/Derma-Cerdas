@@ -10,7 +10,6 @@ use App\Models\DiseaseMedicineRecommendation;
 use App\Models\DiseaseSymptomRule;
 use App\Models\Medicine;
 use App\Models\RedFlag;
-use App\Models\Setting;
 use App\Models\Symptom;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -113,8 +112,6 @@ class KnowledgeBaseController extends Controller
                 'name_indonesian' => ['nullable', 'string', 'max:255'],
                 'description' => ['nullable', 'string'],
                 'source_note' => ['nullable', 'string'],
-                'severity_scope' => ['required', 'string', 'max:80'],
-                'default_action' => ['required', 'string', 'max:80'],
                 'dataset_class_mapping_id' => ['nullable', 'exists:dataset_class_mappings,id'],
                 'is_active' => ['boolean'],
             ],
@@ -167,18 +164,9 @@ class KnowledgeBaseController extends Controller
                 'dataset_class_name' => ['required', 'string', 'max:255', Rule::unique('dataset_class_mappings', 'dataset_class_name')->ignore($id)],
                 'nama_indonesia' => ['nullable', 'string', 'max:255'],
                 'clinical_group' => ['nullable', 'string', 'max:120'],
-                'scope_category' => ['required', 'string', 'max:80'],
-                'boleh_rekomendasi_obat' => ['boolean'],
-                'default_action' => ['required', 'string', 'max:80'],
                 'disease_id' => ['nullable', 'exists:diseases,id'],
                 'risk_note' => ['nullable', 'string'],
                 'source_note' => ['nullable', 'string'],
-            ],
-            'settings' => [
-                'key' => ['required', 'string', 'max:120', Rule::unique('settings', 'key')->ignore($id)],
-                'value' => ['required'],
-                'group' => ['required', 'string', 'max:80'],
-                'description' => ['nullable', 'string'],
             ],
             default => abort(404),
         };
@@ -351,9 +339,6 @@ class KnowledgeBaseController extends Controller
                 'dataset_class_name' => $item->dataset_class_name,
                 'nama_indonesia' => $item->nama_indonesia,
                 'clinical_group' => $item->clinical_group,
-                'scope_category' => $item->scope_category,
-                'boleh_rekomendasi_obat' => (bool) $item->boleh_rekomendasi_obat,
-                'default_action' => $item->default_action,
                 'disease_name' => $item->disease?->name_indonesian ?: $item->disease?->name,
                 'risk_note' => $item->risk_note,
                 'source_note' => $item->source_note,
@@ -381,6 +366,7 @@ class KnowledgeBaseController extends Controller
                     'visual_score' => (float) $finalResult->visual_score,
                     'fusion_score' => (float) $finalResult->fusion_score,
                     'action' => $finalResult->action,
+                    'fusion_rule_code' => $finalResult->fusion_rule_code,
                     'explanation' => $finalResult->explanation,
                     'recommendations' => $finalResult->recommendations_snapshot ?? [],
                 ] : null,
@@ -422,8 +408,6 @@ class KnowledgeBaseController extends Controller
                 'title' => $item->name_indonesian ?: $item->name,
                 'dataset' => $this->datasetSnapshot($mapping),
                 'description' => $item->description,
-                'default_action' => $item->default_action,
-                'severity_scope' => $item->severity_scope,
                 'is_active' => (bool) $item->is_active,
             ];
         }
@@ -470,9 +454,6 @@ class KnowledgeBaseController extends Controller
             'datasetMappings' => DatasetClassMapping::query()
                 ->orderBy('dataset_class_id')
                 ->get(['id', 'dataset_class_name as name']),
-            'scopeCategories' => ['swamedikasi', 'edukasi', 'rujuk', 'exclude'],
-            'actions' => ['recommend_otc', 'educate_only', 'refer'],
-            'severityScopes' => ['mild', 'moderate', 'danger', 'excluded'],
             'inputTypes' => ['scale', 'boolean', 'choice', 'duration'],
         ];
     }
@@ -596,9 +577,6 @@ class KnowledgeBaseController extends Controller
             'dataset_class_name' => $mapping->dataset_class_name,
             'nama_indonesia' => $mapping->nama_indonesia,
             'clinical_group' => $mapping->clinical_group,
-            'scope_category' => $mapping->scope_category,
-            'boleh_rekomendasi_obat' => (bool) $mapping->boleh_rekomendasi_obat,
-            'default_action' => $mapping->default_action,
             'disease_name' => $mapping->disease?->name_indonesian ?: $mapping->disease?->name,
             'risk_note' => $mapping->risk_note,
             'source_note' => $mapping->source_note,
@@ -615,15 +593,13 @@ class KnowledgeBaseController extends Controller
                 'title' => 'Penyakit',
                 'description' => 'Master penyakit lokal yang dipakai mesin keputusan.',
                 'with' => ['datasetMappings.disease'],
-                'columns' => ['code', 'name', 'name_indonesian', 'dataset_name', 'severity_scope', 'default_action', 'is_active'],
+                'columns' => ['code', 'name', 'name_indonesian', 'dataset_name', 'is_active'],
                 'fields' => [
                     ['name' => 'code', 'label' => 'Kode penyakit', 'help' => 'Kode internal singkat, misalnya TINEA_CORPORIS.'],
                     ['name' => 'name', 'label' => 'Nama penyakit'],
                     ['name' => 'name_indonesian', 'label' => 'Nama Indonesia'],
                     ['name' => 'description', 'label' => 'Deskripsi', 'type' => 'textarea'],
                     ['name' => 'source_note', 'label' => 'Sumber klinis', 'type' => 'textarea'],
-                    ['name' => 'severity_scope', 'label' => 'Tingkat risiko', 'type' => 'select', 'options' => 'severityScopes'],
-                    ['name' => 'default_action', 'label' => 'Arahan default', 'type' => 'select', 'options' => 'actions'],
                     ['name' => 'dataset_class_mapping_id', 'label' => 'Relevan ke dataset', 'type' => 'select', 'options' => 'datasetMappings', 'nullable' => true, 'help' => 'Pilih class SD-198 yang menjadi dasar penyakit ini.'],
                     ['name' => 'is_active', 'label' => 'Aktif', 'type' => 'checkbox'],
                 ],
@@ -716,32 +692,16 @@ class KnowledgeBaseController extends Controller
                 'title' => 'Dataset Mapping',
                 'description' => 'Mapping class SD-198 ke scope sistem dan penyakit lokal.',
                 'with' => ['disease'],
-                'columns' => ['dataset_class_id', 'dataset_class_name', 'nama_indonesia', 'clinical_group', 'scope_category', 'disease_name'],
+                'columns' => ['dataset_class_id', 'dataset_class_name', 'nama_indonesia', 'clinical_group', 'disease_name'],
                 'fields' => [
                     ['name' => 'dataset_class_id', 'label' => 'Nomor class SD-198', 'type' => 'number', 'help' => 'Nomor class dari file label dataset.'],
                     ['name' => 'dataset_class_name', 'label' => 'Nama folder/class SD-198', 'help' => 'Harus sama persis dengan nama folder gambar di datasets/sd-198/images.'],
                     ['name' => 'nama_indonesia', 'label' => 'Nama Indonesia'],
                     ['name' => 'clinical_group', 'label' => 'Kelompok klinis'],
-                    ['name' => 'scope_category', 'label' => 'Kategori penggunaan', 'type' => 'select', 'options' => 'scopeCategories'],
-                    ['name' => 'boleh_rekomendasi_obat', 'label' => 'Boleh tampilkan rekomendasi obat', 'type' => 'checkbox'],
-                    ['name' => 'default_action', 'label' => 'Arahan default', 'type' => 'select', 'options' => 'actions'],
                     ['name' => 'disease_id', 'label' => 'Hubungkan ke penyakit lokal', 'type' => 'select', 'options' => 'diseases', 'nullable' => true],
                     ['name' => 'risk_note', 'label' => 'Catatan risiko', 'type' => 'textarea'],
                     ['name' => 'source_note', 'label' => 'Sumber klinis', 'type' => 'textarea'],
                     ['name' => 'dataset_images', 'label' => 'Upload gambar class ini', 'type' => 'file', 'multiple' => true, 'help' => 'Opsional. Pilih beberapa gambar JPG/PNG/WEBP. File akan disimpan ke folder class SD-198 yang sesuai.'],
-                ],
-                'booleans' => ['boleh_rekomendasi_obat'],
-            ],
-            'settings' => [
-                'model' => Setting::class,
-                'title' => 'Pengaturan',
-                'description' => 'Threshold, bobot fusion, dan konfigurasi sistem.',
-                'columns' => ['key', 'value', 'group', 'description'],
-                'fields' => [
-                    ['name' => 'key', 'label' => 'Key'],
-                    ['name' => 'value', 'label' => 'Value'],
-                    ['name' => 'group', 'label' => 'Group'],
-                    ['name' => 'description', 'label' => 'Deskripsi', 'type' => 'textarea'],
                 ],
             ],
             'consultations' => [

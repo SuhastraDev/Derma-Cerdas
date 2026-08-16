@@ -45,10 +45,13 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'RING_SHAPED_EDGE' => 0.8,
-                'ITCHING' => 0.6,
-                'RED_RASH' => 0.6,
-                'DRY_SCALY_SKIN' => 0.4,
+                'G01' => 0.6, // kulit kemerahan
+                'G02' => 0.6, // gatal
+                'G03' => 0.8, // kulit bersisik (wajib)
+                'G06' => 0.8, // lesi berbentuk cincin (wajib)
+                'G07' => 0.8, // bagian tengah lesi tampak lebih bersih (wajib)
+                'G08' => 0.8, // batas lesi terlihat jelas (wajib)
+                'G19' => 0.8, // lesi bertambah luas secara perlahan (wajib)
             ]),
             'red_flags' => $this->redFlags([]),
         ];
@@ -60,9 +63,9 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertSame('completed', $consultation->refresh()->status);
         $this->assertSame('Indra Suhastra', $consultation->visitor_name);
-        $this->assertNotEmpty($consultation->complaint_features['symptom_evidence']['RING_SHAPED_EDGE'] ?? []);
+        $this->assertNotEmpty($consultation->complaint_features['symptom_evidence']['G06'] ?? []);
         $this->assertSame('recommend_otc', $consultation->final_action);
-        $this->assertDatabaseCount('consultation_symptoms', Symptom::query()->count());
+        $this->assertDatabaseCount('consultation_symptoms', Symptom::query()->where('is_active', true)->count());
         $this->assertDatabaseCount('consultation_red_flags', RedFlag::query()->count());
         $this->assertDatabaseCount('consultation_visual_results', 1);
         $this->assertDatabaseHas('consultation_final_results', [
@@ -92,9 +95,9 @@ class ConsultationFlowTest extends TestCase
 
         $codes = collect($response->json('selected_symptoms'))->pluck('code');
 
-        $this->assertLessThan(Symptom::query()->count(), $codes->count());
+        $this->assertLessThan(Symptom::query()->where('is_active', true)->count(), $codes->count());
         $this->assertGreaterThanOrEqual(5, $codes->count());
-        $this->assertContains('RING_SHAPED_EDGE', $codes);
+        $this->assertContains('G06', $codes);
     }
 
     public function test_red_flag_forces_refer_action(): void
