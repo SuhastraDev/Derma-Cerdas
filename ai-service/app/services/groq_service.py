@@ -350,15 +350,21 @@ class GroqVisualClient:
         return None
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
-        cleaned = text.strip()
+        # Reasoning models such as Qwen may prefix the answer with a
+        # <think>...</think> block before the actual JSON payload.
+        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
         fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
 
         if fenced:
             cleaned = fenced.group(1)
 
-        try:
-            data = json.loads(cleaned)
-        except json.JSONDecodeError:
+        data = self.try_parse_json(cleaned)
+
+        if data is None:
+            data = self.try_parse_json(self.extract_first_json_object(cleaned))
+
+        if data is None:
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
@@ -373,6 +379,50 @@ class GroqVisualClient:
             }
 
         return data
+
+    def try_parse_json(self, text: str | None) -> Any:
+        if not text:
+            return None
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return None
+
+    def extract_first_json_object(self, text: str) -> str | None:
+        """Scan for the first balanced {...} object, tolerating any prose around it."""
+        start = text.find("{")
+
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+
+        for index in range(start, len(text)):
+            char = text[index]
+
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+
+                if depth == 0:
+                    return text[start:index + 1]
+
+        return None
 
 
 def normalize_candidates(

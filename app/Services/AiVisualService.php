@@ -74,7 +74,9 @@ class AiVisualService
                 'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
                 'provider_status' => $providerStatus,
                 'warnings' => array_values($body['warnings'] ?? []),
-                'raw_error' => $body['raw_response']['error'] ?? null,
+                'raw_error' => $body['raw_response']['error']
+                    ?? $body['raw_response']['skin_filter']['error']
+                    ?? null,
             ]);
 
             return [
