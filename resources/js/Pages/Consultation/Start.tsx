@@ -39,6 +39,7 @@ type StartProps = {
 type PrecheckResult = {
     selected_symptoms: Symptom[];
     complaint_summary: string[];
+    detected_red_flags: string[];
     visual: {
         status: string;
         provider_status: string;
@@ -134,6 +135,8 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     const [analysisStageIndex, setAnalysisStageIndex] = useState(0);
     const [failedAnalysisStage, setFailedAnalysisStage] = useState<number | null>(null);
     const [adaptiveSymptoms, setAdaptiveSymptoms] = useState<Symptom[]>(symptoms);
+    const [orderedRedFlags, setOrderedRedFlags] = useState<RedFlag[]>(redFlags);
+    const [prefilledRedFlags, setPrefilledRedFlags] = useState<Set<string>>(new Set());
     const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
     const [precheckError, setPrecheckError] = useState<string | null>(null);
     const [prechecking, setPrechecking] = useState(false);
@@ -170,14 +173,14 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     const answeredSymptomCount = answeredSymptoms.size;
     const answeredRedFlagCount = answeredRedFlags.size;
     const currentSymptom = adaptiveSymptoms[symptomQuestionIndex];
-    const currentRedFlag = redFlags[redFlagQuestionIndex];
+    const currentRedFlag = orderedRedFlags[redFlagQuestionIndex];
     const canContinue =
         (currentStep === 0 && data.visitor_name.trim().length >= 2) ||
         (currentStep === 1 && data.consent) ||
         (currentStep === 2 && data.complaint_text.trim().length >= 12) ||
         (currentStep === 3 && data.image !== null) ||
         (currentStep === 4 && answeredSymptomCount === adaptiveSymptoms.length && selectedSymptomCount > 0) ||
-        (currentStep === 5 && answeredRedFlagCount === redFlags.length) ||
+        (currentStep === 5 && answeredRedFlagCount === orderedRedFlags.length) ||
         currentStep >= 6;
 
     const completed = [
@@ -186,7 +189,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         data.complaint_text.trim().length >= 12,
         data.image !== null,
         answeredSymptomCount === adaptiveSymptoms.length && selectedSymptomCount > 0,
-        answeredRedFlagCount === redFlags.length,
+        answeredRedFlagCount === orderedRedFlags.length,
         currentStep === 6,
     ];
 
@@ -237,6 +240,10 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         setAdaptiveSymptoms(symptoms);
         setAnsweredSymptoms(new Set());
         setSymptomQuestionIndex(0);
+        setOrderedRedFlags(redFlags);
+        setPrefilledRedFlags(new Set());
+        setAnsweredRedFlags(new Set());
+        setRedFlagQuestionIndex(0);
     };
 
     const onImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -312,7 +319,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     };
 
     const goToNextRedFlag = () => {
-        setRedFlagQuestionIndex((index) => Math.min(index + 1, redFlags.length - 1));
+        setRedFlagQuestionIndex((index) => Math.min(index + 1, orderedRedFlags.length - 1));
     };
 
     const goNext = () => {
@@ -376,6 +383,32 @@ export default function Start({ symptoms, redFlags }: StartProps) {
             setAdaptiveSymptoms(selected);
             setAnsweredSymptoms(new Set());
             setSymptomQuestionIndex(0);
+
+            // Tanda bahaya yang sudah jelas disebut di cerita keluhan diisi otomatis
+            // (tetap boleh diubah); sisanya tetap wajib dijawab manual demi keamanan.
+            const detectedCodes = new Set<string>(body.detected_red_flags ?? []);
+            const reordered = [...redFlags].sort((a, b) => {
+                const aDetected = detectedCodes.has(a.code) ? 0 : 1;
+                const bDetected = detectedCodes.has(b.code) ? 0 : 1;
+                return aDetected - bDetected;
+            });
+
+            setOrderedRedFlags(reordered);
+            setPrefilledRedFlags(detectedCodes);
+
+            if (detectedCodes.size > 0) {
+                setData('red_flags', {
+                    ...data.red_flags,
+                    ...Object.fromEntries(Array.from(detectedCodes).map((code) => [code, true])),
+                });
+                setAnsweredRedFlags(detectedCodes);
+            } else {
+                setAnsweredRedFlags(new Set());
+            }
+
+            const firstUnanswered = reordered.findIndex((redFlag) => !detectedCodes.has(redFlag.code));
+            setRedFlagQuestionIndex(firstUnanswered === -1 ? 0 : firstUnanswered);
+
             setCurrentStep(4);
         } catch (error) {
             setPrecheckError(error instanceof Error ? error.message : 'Precheck belum berhasil. Coba ulangi.');
@@ -704,7 +737,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                                             <div>
                                                 <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
-                                                    Pertanyaan risiko {redFlagQuestionIndex + 1} dari {redFlags.length}
+                                                    Pertanyaan risiko {redFlagQuestionIndex + 1} dari {orderedRedFlags.length}
                                                 </p>
                                                 <h3 className="mt-1 text-xl font-semibold text-slate-950">
                                                     Tanda bahaya
@@ -715,18 +748,24 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                                     {currentRedFlag.severity}
                                                 </span>
                                                 <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                                                    Terjawab {answeredRedFlagCount}/{redFlags.length}
+                                                    Terjawab {answeredRedFlagCount}/{orderedRedFlags.length}
                                                 </span>
                                             </div>
                                         </div>
                                         <div className="mt-4 h-2 rounded-full bg-slate-100">
                                             <div
                                                 className="h-2 rounded-full bg-emerald-600 transition-all duration-300"
-                                                style={{ width: `${Math.round((answeredRedFlagCount / Math.max(redFlags.length, 1)) * 100)}%` }}
+                                                style={{ width: `${Math.round((answeredRedFlagCount / Math.max(orderedRedFlags.length, 1)) * 100)}%` }}
                                             />
                                         </div>
                                     </div>
                                     <div className="p-5">
+                                        {prefilledRedFlags.has(currentRedFlag.code) && (
+                                            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                                                <Sparkles className="h-3.5 w-3.5" />
+                                                Terisi otomatis dari cerita keluhan kamu — ubah bila perlu
+                                            </div>
+                                        )}
                                         <p className="text-lg font-semibold leading-7 text-slate-950">
                                             {currentRedFlag.question}
                                         </p>
@@ -772,7 +811,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                             <button
                                                 type="button"
                                                 onClick={goToNextRedFlag}
-                                                disabled={!answeredRedFlags.has(currentRedFlag.code) || redFlagQuestionIndex === redFlags.length - 1}
+                                                disabled={!answeredRedFlags.has(currentRedFlag.code) || redFlagQuestionIndex === orderedRedFlags.length - 1}
                                                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                                             >
                                                 Pertanyaan berikutnya

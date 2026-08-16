@@ -97,6 +97,10 @@ class ConsultationController extends Controller
                 'question' => $symptom->question,
             ])->values(),
             'complaint_summary' => $complaintFeatures['summary'] ?? [],
+            'detected_red_flags' => collect($complaintFeatures['red_flag_evidence'] ?? [])
+                ->filter(fn (array $evidence): bool => (bool) ($evidence['detected'] ?? false))
+                ->keys()
+                ->values(),
             'visual' => [
                 'status' => $visualAnalysis['validation_status'],
                 'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
