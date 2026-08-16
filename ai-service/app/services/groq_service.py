@@ -118,6 +118,11 @@ class GroqVisualClient:
             json={
                 "model": settings.groq_model_name,
                 "temperature": 0.2,
+                # Qwen3's chain-of-thought reasoning burns hundreds to thousands of
+                # extra completion tokens per call and isn't needed for this
+                # classification task; disabling it keeps calls well inside Groq's
+                # per-minute token budget and avoids <think> blocks breaking JSON parsing.
+                "reasoning_effort": "none",
                 "messages": [
                     {
                         "role": "user",
