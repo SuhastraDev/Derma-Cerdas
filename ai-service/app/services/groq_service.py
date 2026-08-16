@@ -97,7 +97,6 @@ class GroqVisualClient:
             json={
                 "model": settings.groq_model_name,
                 "temperature": 0.2,
-                "response_format": {"type": "json_object"},
                 "messages": [
                     {
                         "role": "user",
