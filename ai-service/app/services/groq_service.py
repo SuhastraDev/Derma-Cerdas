@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import re
+from io import BytesIO
 from typing import Any
 
 import httpx
+from PIL import Image, ImageOps
 
 from app.config import settings
 from app.schemas import VisualCandidate
@@ -13,6 +15,11 @@ from app.services.class_mapping import allowed_candidate_classes, normalize_clas
 from app.services.image_validation import ImageValidator
 
 GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# Vision token cost scales with image size. A skin lesion photo does not need
+# more than this to stay legible, and keeping requests smaller helps avoid
+# Groq's per-minute token rate limit.
+GROQ_MAX_IMAGE_DIMENSION = 768
 
 
 class GroqVisualClient:
@@ -82,10 +89,24 @@ class GroqVisualClient:
 
     def image_data_url(self, image_base64: str) -> str:
         raw = ImageValidator().decode_base64(image_base64)
-        mime_type = ImageValidator().detect_mime_type(raw) or "image/jpeg"
-        encoded = base64.b64encode(raw).decode("ascii")
+        resized = self.downscale(raw)
 
-        return f"data:{mime_type};base64,{encoded}"
+        return f"data:image/jpeg;base64,{base64.b64encode(resized).decode('ascii')}"
+
+    def downscale(self, raw: bytes) -> bytes:
+        try:
+            with Image.open(BytesIO(raw)) as image:
+                image = ImageOps.exif_transpose(image) or image
+
+                if max(image.size) > GROQ_MAX_IMAGE_DIMENSION:
+                    image.thumbnail((GROQ_MAX_IMAGE_DIMENSION, GROQ_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
+
+                buffer = BytesIO()
+                image.convert("RGB").save(buffer, format="JPEG", quality=85)
+
+                return buffer.getvalue()
+        except Exception:
+            return raw
 
     def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
         response = httpx.post(
