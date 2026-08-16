@@ -336,6 +336,8 @@ class ConsultationFlowTest extends TestCase
                     'warnings' => [],
                     'raw_response' => [],
                 ]);
+
+            $mock->shouldReceive('assessRedFlags')->andReturn([]);
         });
     }
 }

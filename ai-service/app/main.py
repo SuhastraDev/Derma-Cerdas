@@ -3,7 +3,14 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 
 from app.config import settings
-from app.schemas import AnalyzeImageRequest, AnalyzeImageResponse, ImageValidationRequest, ImageValidationResponse
+from app.schemas import (
+    AnalyzeImageRequest,
+    AnalyzeImageResponse,
+    AssessRedFlagsRequest,
+    AssessRedFlagsResponse,
+    ImageValidationRequest,
+    ImageValidationResponse,
+)
 from app.services.analysis_service import VisualAnalysisService
 from app.services.dataset_visual_index import DatasetVisualIndex
 from app.services.groq_service import GroqVisualClient
@@ -47,3 +54,19 @@ def analyze_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
 
     service = VisualAnalysisService(GroqVisualClient())
     return service.analyze(payload, validation)
+
+
+@app.post("/assess-red-flags", response_model=AssessRedFlagsResponse)
+def assess_red_flags(payload: AssessRedFlagsRequest) -> AssessRedFlagsResponse:
+    result = GroqVisualClient().assess_red_flags(
+        payload.complaint_text,
+        [red_flag.model_dump() for red_flag in payload.red_flags],
+    )
+    provider_status = str(result.get("provider_status", "ok"))
+
+    return AssessRedFlagsResponse(
+        provider_status=provider_status,
+        detected_codes=result.get("detected_codes", []) if provider_status == "ok" else [],
+        warnings=result.get("warnings", []),
+        raw_response=result.get("raw_response", {}),
+    )

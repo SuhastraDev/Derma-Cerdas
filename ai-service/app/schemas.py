@@ -36,3 +36,21 @@ class AnalyzeImageResponse(BaseModel):
     candidates: list[VisualCandidate] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     raw_response: dict = Field(default_factory=dict)
+
+
+class RedFlagQuestion(BaseModel):
+    code: str
+    question: str
+
+
+class AssessRedFlagsRequest(BaseModel):
+    complaint_text: str = Field(..., min_length=1)
+    red_flags: list[RedFlagQuestion] = Field(default_factory=list)
+
+
+class AssessRedFlagsResponse(BaseModel):
+    provider: str = "groq"
+    provider_status: str = "ok"
+    detected_codes: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    raw_response: dict = Field(default_factory=dict)

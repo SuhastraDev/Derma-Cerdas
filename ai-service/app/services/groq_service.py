@@ -38,6 +38,79 @@ class GroqVisualClient:
 
         return self.groq_response(image_base64, classes, dataset_matches or [])
 
+    def assess_red_flags(self, complaint_text: str, red_flags: list[dict[str, str]]) -> dict[str, Any]:
+        """Text-only pass over the free-text complaint to flag danger signs the
+        user already described, so the wizard doesn't re-ask what was already
+        told. Never used to clear/skip a question - only to pre-fill positives,
+        so a missed detection here still leaves the question for the user."""
+        if not red_flags:
+            return {"provider_status": "ok", "detected_codes": [], "warnings": [], "raw_response": {}}
+
+        if settings.ai_mock_mode or not settings.groq_api_key:
+            return {
+                "provider_status": "mock_mode",
+                "detected_codes": [],
+                "warnings": ["AI_MOCK_MODE aktif; deteksi tanda bahaya otomatis tidak dijalankan."],
+                "raw_response": {"mode": "mock"},
+            }
+
+        try:
+            body = self.text_chat_completion(self.red_flag_prompt(complaint_text, red_flags))
+        except Exception as exc:
+            return self.provider_error_response(exc, "Groq red flag assessment")
+
+        text = self.completion_text(body)
+        parsed = self.parse_json_text(text)
+        raw_codes = parsed.get("detected_codes", [])
+        valid_codes = {rf["code"] for rf in red_flags}
+        detected_codes = [
+            code for code in raw_codes if isinstance(code, str) and code in valid_codes
+        ]
+
+        return {
+            "provider_status": "ok",
+            "detected_codes": detected_codes,
+            "warnings": parsed.get("warnings", []),
+            "raw_response": {"text": text, "model": settings.groq_model_name},
+        }
+
+    def red_flag_prompt(self, complaint_text: str, red_flags: list[dict[str, str]]) -> str:
+        items = "\n".join(f"- {rf['code']}: {rf['question']}" for rf in red_flags)
+
+        return (
+            "Anda membantu triase awal skrining kulit DermaCerdas, bukan menegakkan diagnosis. "
+            "Berikut cerita keluhan yang ditulis pengguna sendiri:\n"
+            f"\"{complaint_text}\"\n\n"
+            "Berikut daftar pertanyaan tanda bahaya (kode: pertanyaan):\n"
+            f"{items}\n\n"
+            "Tugas: tentukan kode tanda bahaya mana saja yang SECARA JELAS DAN EKSPLISIT "
+            "dikonfirmasi ADA dalam cerita tersebut, bukan sekadar mungkin atau tidak disebutkan. "
+            "Kehati-hatian penting: lebih baik TIDAK menyertakan kode yang meragukan daripada salah "
+            "menyertakan, karena pengguna tetap akan ditanya ulang untuk kode yang tidak kamu sertakan. "
+            "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
+            '{"detected_codes": ["KODE1"], "warnings": []}. '
+            "Jika tidak ada tanda bahaya yang jelas disebut, balas dengan detected_codes kosong."
+        )
+
+    def text_chat_completion(self, prompt: str) -> dict[str, Any]:
+        response = httpx.post(
+            GROQ_CHAT_COMPLETIONS_URL,
+            headers={
+                "Authorization": f"Bearer {settings.groq_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.groq_model_name,
+                "temperature": 0.1,
+                "reasoning_effort": "none",
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30.0,
+        )
+        response.raise_for_status()
+
+        return response.json()
+
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
         return {
             "provider_status": "mock_mode",

@@ -169,4 +169,59 @@ class AiVisualService
             ->values()
             ->all();
     }
+
+    /**
+     * Ask the AI service to point out which red flags the user already
+     * described in their free-text story, so the wizard doesn't make them
+     * re-answer what they already said. Never blocks or fails the request -
+     * any failure just means nothing gets pre-filled and the user answers
+     * every question manually, same as before this existed.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Models\RedFlag>  $redFlags
+     * @return array<int, string>
+     */
+    public function assessRedFlags(string $complaintText, \Illuminate\Support\Collection $redFlags): array
+    {
+        $baseUrl = trim((string) config('services.dermacerdas_ai.url'));
+
+        if ($baseUrl === '' || $redFlags->isEmpty()) {
+            return [];
+        }
+
+        try {
+            $response = Http::timeout((int) config('services.dermacerdas_ai.timeout', 45))
+                ->acceptJson()
+                ->post(rtrim($baseUrl, '/').'/assess-red-flags', [
+                    'complaint_text' => $complaintText,
+                    'red_flags' => $redFlags
+                        ->map(fn ($redFlag): array => [
+                            'code' => $redFlag->code,
+                            'question' => $redFlag->question,
+                        ])
+                        ->values()
+                        ->all(),
+                ]);
+
+            if ($response->failed()) {
+                return [];
+            }
+
+            $body = $response->json() ?? [];
+
+            if ((string) ($body['provider_status'] ?? 'ok') !== 'ok') {
+                return [];
+            }
+
+            $validCodes = $redFlags->pluck('code')->all();
+
+            return collect($body['detected_codes'] ?? [])
+                ->filter(fn ($code): bool => is_string($code) && in_array($code, $validCodes, true))
+                ->values()
+                ->all();
+        } catch (\Throwable $exception) {
+            Log::warning('AI red flag assessment unavailable.', ['message' => $exception->getMessage()]);
+
+            return [];
+        }
+    }
 }

@@ -89,6 +89,15 @@ class ConsultationController extends Controller
             $visualAnalysis['candidates'] ?? []
         );
 
+        $keywordDetectedRedFlags = collect($complaintFeatures['red_flag_evidence'] ?? [])
+            ->filter(fn (array $evidence): bool => (bool) ($evidence['detected'] ?? false))
+            ->keys();
+
+        $aiDetectedRedFlags = $aiVisualService->assessRedFlags(
+            $validated['complaint_text'],
+            RedFlag::query()->where('is_active', true)->get()
+        );
+
         return response()->json([
             'selected_symptoms' => $selectedSymptoms->map(fn (Symptom $symptom): array => [
                 'id' => $symptom->id,
@@ -97,9 +106,9 @@ class ConsultationController extends Controller
                 'question' => $symptom->question,
             ])->values(),
             'complaint_summary' => $complaintFeatures['summary'] ?? [],
-            'detected_red_flags' => collect($complaintFeatures['red_flag_evidence'] ?? [])
-                ->filter(fn (array $evidence): bool => (bool) ($evidence['detected'] ?? false))
-                ->keys()
+            'detected_red_flags' => $keywordDetectedRedFlags
+                ->merge($aiDetectedRedFlags)
+                ->unique()
                 ->values(),
             'visual' => [
                 'status' => $visualAnalysis['validation_status'],
