@@ -102,13 +102,6 @@ const steps = [
     { label: 'Review', helper: 'Periksa & kirim', icon: CheckCircle2 },
 ];
 
-const analysisStages = [
-    'Mengunggah foto',
-    'Validasi visual AI',
-    'Menghitung gejala CF',
-    'Fusion keputusan',
-    'Menyimpan hasil',
-];
 
 function scoreLabel(value: number): string {
     return certaintyLabels[value] ?? `${Math.round(value * 100)}%`;
@@ -145,7 +138,8 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     const [redFlagQuestionIndex, setRedFlagQuestionIndex] = useState(0);
     const [answeredSymptoms, setAnsweredSymptoms] = useState<Set<string>>(new Set());
     const [answeredRedFlags, setAnsweredRedFlags] = useState<Set<string>>(new Set());
-    const [analysisStageIndex, setAnalysisStageIndex] = useState(0);
+    const [elapsedMs, setElapsedMs] = useState(0);
+    const [precheckElapsedMs, setPrecheckElapsedMs] = useState(0);
     const [failedAnalysisStage, setFailedAnalysisStage] = useState<number | null>(null);
     const [adaptiveSymptoms, setAdaptiveSymptoms] = useState<Symptom[]>(symptoms);
     const [orderedRedFlags, setOrderedRedFlags] = useState<RedFlag[]>(redFlags);
@@ -172,7 +166,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         [redFlags],
     );
 
-    const { data, setData, post, processing, errors } = useForm<FormData>({
+    const { data, setData, post, processing, progress, errors } = useForm<FormData>({
         visitor_name: '',
         complaint_text: '',
         consent: false,
@@ -250,19 +244,37 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Progres yang ditampilkan hanya berasal dari kejadian nyata: persentase
+    // unggahan dari XHR, dan waktu berjalan sejak permintaan dikirim. Sebelumnya
+    // lima tahap dicentang oleh timer 900ms tanpa hubungan apa pun dengan proses
+    // di server - pengguna melihat "Fusion keputusan" selesai padahal server
+    // belum tentu sampai ke sana.
     useEffect(() => {
         if (!processing) {
+            setElapsedMs(0);
+
             return;
         }
 
         setFailedAnalysisStage(null);
-        setAnalysisStageIndex(0);
-        const timer = window.setInterval(() => {
-            setAnalysisStageIndex((stage) => Math.min(stage + 1, analysisStages.length - 1));
-        }, 900);
+        const mulai = Date.now();
+        const timer = window.setInterval(() => setElapsedMs(Date.now() - mulai), 100);
 
         return () => window.clearInterval(timer);
     }, [processing]);
+
+    useEffect(() => {
+        if (!prechecking) {
+            setPrecheckElapsedMs(0);
+
+            return;
+        }
+
+        const mulai = Date.now();
+        const timer = window.setInterval(() => setPrecheckElapsedMs(Date.now() - mulai), 100);
+
+        return () => window.clearInterval(timer);
+    }, [prechecking]);
 
     const replaceImage = (file: File | null) => {
         if (previewUrl) {
@@ -485,7 +497,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                     setCurrentStep(4);
                     setFailedAnalysisStage(2);
                 } else {
-                    setFailedAnalysisStage(analysisStageIndex);
+                    setFailedAnalysisStage(0);
                 }
             },
         });
@@ -664,7 +676,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                 </div>
                             </div>
                             <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
-                                Setelah foto dipilih, sistem akan melakukan precheck untuk menyusun pertanyaan gejala yang paling relevan dari keluhan dan kandidat visual.
+                                Setelah foto dipilih, sistem menganalisisnya lebih dulu untuk memilih pertanyaan yang paling memisahkan kandidat penyakit. Tahap ini memanggil model visual, jadi biasanya butuh 20 sampai 60 detik.
                             </div>
                             {precheckError && <ErrorText>{precheckError}</ErrorText>}
                         </section>
@@ -940,8 +952,12 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                 disabled={!canContinue || processing || prechecking}
                                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-orange-400 px-5 text-sm font-bold text-neutral-50 shadow-sm transition hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {prechecking ? 'Menyusun...' : currentStep === 3 ? 'Susun pertanyaan' : 'Lanjut'}
-                                <ArrowRight className="h-4 w-4" />
+                                {prechecking
+                                    ? `Menganalisis foto... ${Math.floor(precheckElapsedMs / 1000)}s`
+                                    : currentStep === 3
+                                      ? 'Susun pertanyaan'
+                                      : 'Lanjut'}
+                                {!prechecking && <ArrowRight className="h-4 w-4" />}
                             </button>
                         )}
                     </section>
@@ -953,9 +969,9 @@ export default function Start({ symptoms, redFlags }: StartProps) {
 
             {(processing || failedAnalysisStage !== null) && (
                 <AnalysisTracker
-                    activeIndex={analysisStageIndex}
-                    failedIndex={failedAnalysisStage}
-                    isProcessing={processing}
+                    uploadPercent={progress?.percentage ?? null}
+                    elapsedMs={elapsedMs}
+                    failed={failedAnalysisStage !== null}
                     errorMessage={analysisErrorMessage}
                     onClose={() => setFailedAnalysisStage(null)}
                 />
@@ -1002,98 +1018,106 @@ function ErrorText({ children }: { children: string }) {
 }
 
 function AnalysisTracker({
-    activeIndex,
-    failedIndex,
-    isProcessing,
+    uploadPercent,
+    elapsedMs,
+    failed,
     errorMessage,
     onClose,
 }: {
-    activeIndex: number;
-    failedIndex: number | null;
-    isProcessing: boolean;
+    uploadPercent: number | null;
+    elapsedMs: number;
+    failed: boolean;
     errorMessage: string | null;
     onClose: () => void;
 }) {
+    const detik = Math.floor(elapsedMs / 1000);
+    const menit = Math.floor(detik / 60);
+    const waktu = menit > 0 ? `${menit}m ${String(detik % 60).padStart(2, '0')}s` : `${detik}s`;
+
+    // Unggahan punya progres sungguhan dari XHR. Setelah 100%, bola ada di server
+    // dan kita memang tidak tahu sudah sampai mana - jadi ditampilkan apa adanya
+    // sebagai proses berjalan dengan waktu, bukan tahap yang dicentang-centang.
+    const sedangMengunggah = uploadPercent !== null && uploadPercent < 100;
+    const persen = uploadPercent ?? 0;
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 px-4 backdrop-blur-sm">
-            <div className="relative w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
-                {failedIndex !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="consultation-card-enter w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl sm:p-7">
+                <div className="flex items-start gap-4">
+                    <div
+                        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
+                            failed ? 'bg-red-700' : 'bg-neutral-900'
+                        }`}
+                    >
+                        {failed ? (
+                            <AlertTriangle className="h-6 w-6 text-white" />
+                        ) : (
+                            <Sparkles className="h-6 w-6 animate-pulse text-white" />
+                        )}
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+                            {failed ? 'Analisis gagal' : sedangMengunggah ? 'Mengunggah' : 'Diproses di server'}
+                        </p>
+                        <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                            {failed ? 'Analisis berhenti' : sedangMengunggah ? `Mengirim foto ${persen}%` : 'Menganalisis foto dan gejala'}
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                            {failed
+                                ? 'Periksa pesan error pada tahap yang terbuka, lalu kirim ulang setelah diperbaiki.'
+                                : sedangMengunggah
+                                  ? 'Foto sedang dikirim ke server.'
+                                  : 'Foto dikirim ke model visual, lalu digabungkan dengan hasil perhitungan gejala. Tahap ini biasanya memakan 30 sampai 90 detik.'}
+                        </p>
+                    </div>
+                </div>
+
+                {failed && errorMessage && (
+                    <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700">
+                        {errorMessage}
+                    </p>
+                )}
+
+                {!failed && (
+                    <>
+                        <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100">
+                            {sedangMengunggah ? (
+                                <div
+                                    className="h-2 rounded-full bg-emerald-600 transition-[width] duration-200 ease-out"
+                                    style={{ width: `${persen}%` }}
+                                />
+                            ) : (
+                                <div className="analysis-scan h-2 rounded-full bg-emerald-600" />
+                            )}
+                        </div>
+
+                        <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Unggahan</dt>
+                                <dd className="mt-1 font-semibold text-slate-950">
+                                    {uploadPercent === null ? 'menunggu' : `${persen}%`}
+                                </dd>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Waktu berjalan</dt>
+                                <dd className="mt-1 font-mono font-semibold tabular-nums text-slate-950">{waktu}</dd>
+                            </div>
+                        </dl>
+
+                        <p className="mt-5 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
+                            Jangan tutup halaman ini sampai hasil muncul
+                        </p>
+                    </>
+                )}
+
+                {failed && (
                     <button
                         type="button"
                         onClick={onClose}
-                        aria-label="Tutup pesan error"
-                        className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-200"
+                        className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-neutral-900 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800"
                     >
-                        <X className="h-5 w-5" />
+                        Tutup
                     </button>
-                )}
-                <div className="flex items-start gap-4">
-                    <div className={`rounded-xl p-3 text-white ${failedIndex !== null ? 'bg-red-700' : 'bg-neutral-950'}`}>
-                        {failedIndex !== null ? <AlertTriangle className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">
-                            Tracking analisis
-                        </p>
-                        <h2 className="mt-1 text-xl font-semibold text-slate-950">
-                            {failedIndex !== null ? 'Analisis berhenti di satu tahap' : 'Analisis sedang berlangsung'}
-                        </h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                            {failedIndex !== null
-                                ? 'Periksa pesan error di tahap konsultasi yang terbuka, lalu kirim ulang setelah diperbaiki.'
-                                : 'Sistem memvalidasi foto, menghitung gejala, lalu menggabungkan hasil visual dan tekstual.'}
-                        </p>
-                        {failedIndex !== null && errorMessage && (
-                            <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700">
-                                {errorMessage}
-                            </p>
-                        )}
-                    </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                    {analysisStages.map((stage, index) => {
-                        const failed = failedIndex === index;
-                        const done = failedIndex === null && index < activeIndex;
-                        const active = failedIndex === null && index === activeIndex;
-
-                        return (
-                            <div key={stage} className="flex items-center gap-3">
-                                <div
-                                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm font-bold ${
-                                        failed
-                                            ? 'border-red-700 bg-red-700 text-white'
-                                            : done
-                                              ? 'border-emerald-600 bg-emerald-600 text-white'
-                                              : active
-                                                ? 'border-orange-400 bg-orange-400 text-white'
-                                                : 'border-slate-200 bg-slate-100 text-slate-400'
-                                    }`}
-                                >
-                                    {failed ? '!' : done ? '✓' : index + 1}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className={`text-sm font-semibold ${failed ? 'text-red-700' : active ? 'text-orange-700' : done ? 'text-emerald-700' : 'text-slate-500'}`}>
-                                        {stage}
-                                    </p>
-                                    <div className="mt-1 h-1.5 rounded-full bg-slate-100">
-                                        <div
-                                            className={`h-1.5 rounded-full transition-all duration-300 ${
-                                                failed ? 'bg-red-700' : done ? 'bg-emerald-600' : active ? 'bg-orange-400' : 'bg-slate-200'
-                                            }`}
-                                            style={{ width: done || active || failed ? '100%' : '0%' }}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-
-                {isProcessing && (
-                    <p className="mt-5 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        Jangan tutup halaman ini sampai hasil muncul.
-                    </p>
                 )}
             </div>
         </div>

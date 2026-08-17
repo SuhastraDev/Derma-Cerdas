@@ -84,3 +84,29 @@ body {
         transition: none;
     }
 }
+
+/* Garis pemindai untuk proses yang durasinya memang tidak diketahui.
+   Sengaja indeterminate: memalsukan persentase saat server belum melapor
+   apa-apa sama saja membohongi pengguna. */
+@keyframes analysis-scan {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(400%);
+    }
+}
+
+.analysis-scan {
+    width: 25%;
+    animation: analysis-scan 1400ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .analysis-scan {
+        animation: none;
+        width: 100%;
+        opacity: 0.5;
+    }
+}
