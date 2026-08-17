@@ -243,3 +243,73 @@ def test_groq_429_is_classified_as_quota_exhausted() -> None:
     assert response["provider_status"] == "quota_exceeded"
     assert response["raw_response"]["error_code"] == "quota_exceeded"
     assert "API key dengan limit aktif" in response["warnings"][0]
+
+
+def test_post_with_retry_recovers_from_a_transient_503(monkeypatch) -> None:
+    import httpx
+
+    from app.services import groq_service as groq_service_module
+
+    calls: list[int] = []
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict) -> None:
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise httpx.HTTPStatusError("error", request=None, response=self)
+
+    def fake_post(url, headers, json, timeout):
+        calls.append(1)
+
+        if len(calls) == 1:
+            return FakeResponse(503, {"error": {"message": "over capacity"}})
+
+        return FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]})
+
+    monkeypatch.setattr(groq_service_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(groq_service_module.httpx, "post", fake_post)
+
+    body = GroqVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
+
+    assert len(calls) == 2
+    assert body["choices"][0]["message"]["content"] == "ok"
+
+
+def test_post_with_retry_gives_up_after_repeated_503(monkeypatch) -> None:
+    import httpx
+
+    from app.services import groq_service as groq_service_module
+
+    calls: list[int] = []
+
+    class FakeResponse:
+        status_code = 503
+
+        def json(self):
+            return {"error": {"message": "over capacity"}}
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("error", request=None, response=self)
+
+    def fake_post(url, headers, json, timeout):
+        calls.append(1)
+
+        return FakeResponse()
+
+    monkeypatch.setattr(groq_service_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(groq_service_module.httpx, "post", fake_post)
+
+    try:
+        GroqVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
+        raised = False
+    except httpx.HTTPStatusError:
+        raised = True
+
+    assert raised is True
+    assert len(calls) == 2

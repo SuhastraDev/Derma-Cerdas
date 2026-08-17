@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 from io import BytesIO
 from typing import Any
 
@@ -93,23 +94,15 @@ class GroqVisualClient:
         )
 
     def text_chat_completion(self, prompt: str) -> dict[str, Any]:
-        response = httpx.post(
-            GROQ_CHAT_COMPLETIONS_URL,
-            headers={
-                "Authorization": f"Bearer {settings.groq_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
+        return self.post_with_retry(
+            {
                 "model": settings.groq_model_name,
                 "temperature": 0.1,
                 "reasoning_effort": "none",
                 "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=30.0,
+            timeout=15.0,
         )
-        response.raise_for_status()
-
-        return response.json()
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
         return {
@@ -182,13 +175,8 @@ class GroqVisualClient:
             return raw
 
     def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
-        response = httpx.post(
-            GROQ_CHAT_COMPLETIONS_URL,
-            headers={
-                "Authorization": f"Bearer {settings.groq_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
+        return self.post_with_retry(
+            {
                 "model": settings.groq_model_name,
                 "temperature": 0.2,
                 # Qwen3's chain-of-thought reasoning burns hundreds to thousands of
@@ -206,8 +194,40 @@ class GroqVisualClient:
                     }
                 ],
             },
-            timeout=60.0,
+            timeout=25.0,
         )
+
+    def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
+        """Retry once on Groq-side transient errors (rate limit / over capacity /
+        5xx), per Groq's own guidance to back off and retry. Client errors (4xx
+        other than 429) are not retried - retrying a malformed request just
+        wastes token budget for the same failure. Kept to 2 attempts with a
+        short per-attempt timeout so the combined wait stays comfortably under
+        Laravel's DERMACERDAS_AI_TIMEOUT, even if an attempt genuinely hangs
+        rather than fast-failing with a 503."""
+        attempts = 2
+        backoff_seconds = 2.0
+
+        for attempt in range(1, attempts + 1):
+            response = httpx.post(
+                GROQ_CHAT_COMPLETIONS_URL,
+                headers={
+                    "Authorization": f"Bearer {settings.groq_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=json_body,
+                timeout=timeout,
+            )
+
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < attempts:
+                    time.sleep(backoff_seconds * attempt)
+                    continue
+
+            response.raise_for_status()
+
+            return response.json()
+
         response.raise_for_status()
 
         return response.json()
