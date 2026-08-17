@@ -13,8 +13,8 @@ from app.schemas import (
 )
 from app.services.analysis_service import VisualAnalysisService
 from app.services.dataset_visual_index import DatasetVisualIndex
-from app.services.nvidia_service import NvidiaVisualClient
 from app.services.image_validation import ImageValidationError, ImageValidator
+from app.services.provider_factory import visual_client
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -25,6 +25,7 @@ def health() -> dict[str, str | bool]:
         "status": "ok",
         "service": settings.app_name,
         "environment": settings.app_env,
+        "provider": visual_client().provider,
         "mock_mode": settings.ai_mock_mode,
         "dataset_index_ready": DatasetVisualIndex().status()["ready"],
     }
@@ -52,19 +53,20 @@ def analyze_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
     if not validation.is_valid:
         raise HTTPException(status_code=422, detail="Gambar tidak valid untuk dianalisis.")
 
-    service = VisualAnalysisService(NvidiaVisualClient())
+    service = VisualAnalysisService(visual_client())
     return service.analyze(payload, validation)
 
 
 @app.post("/assess-red-flags", response_model=AssessRedFlagsResponse)
 def assess_red_flags(payload: AssessRedFlagsRequest) -> AssessRedFlagsResponse:
-    result = NvidiaVisualClient().assess_red_flags(
+    result = visual_client().assess_red_flags(
         payload.complaint_text,
         [red_flag.model_dump() for red_flag in payload.red_flags],
     )
     provider_status = str(result.get("provider_status", "ok"))
 
     return AssessRedFlagsResponse(
+        provider=visual_client().provider,
         provider_status=provider_status,
         detected_codes=result.get("detected_codes", []) if provider_status == "ok" else [],
         warnings=result.get("warnings", []),

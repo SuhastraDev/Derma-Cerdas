@@ -1,6 +1,6 @@
 # DermaCerdas AI Service
 
-FastAPI service untuk Phase 5 DermaCerdas. Service ini menangani validasi gambar, analisis visual via NVIDIA NIM (model vision `meta/llama-3.2-11b-vision-instruct`), parsing kandidat penyakit, dan mapping kandidat visual ke class SD-198 / disease lokal.
+FastAPI service untuk Phase 5 DermaCerdas. Service ini menangani validasi gambar, analisis visual via provider vision (`AI_PROVIDER=nvidia` atau `AI_PROVIDER=groq`), parsing kandidat penyakit, fallback indeks dataset, dan mapping kandidat visual ke class SD-198 / disease lokal.
 
 ## Menjalankan Lokal
 
@@ -13,7 +13,11 @@ copy .env.example .env
 uvicorn app.main:app --reload --port 8001
 ```
 
-Default `AI_MOCK_MODE=true`, jadi endpoint `/analyze-image` bisa dites tanpa API key. Untuk NVIDIA NIM asli, isi `NVIDIA_API_KEY` (dari [build.nvidia.com](https://build.nvidia.com)) dan set `AI_MOCK_MODE=false`.
+Default `AI_MOCK_MODE=true`, jadi endpoint `/analyze-image` bisa dites tanpa API key.
+
+Untuk NVIDIA NIM asli, isi `NVIDIA_API_KEY` (dari [build.nvidia.com](https://build.nvidia.com)), set `AI_PROVIDER=nvidia`, dan set `AI_MOCK_MODE=false`.
+
+Untuk Groq vision, isi `GROQ_API_KEY`, set `AI_PROVIDER=groq`, pakai model default `qwen/qwen3.6-27b`, dan set `AI_MOCK_MODE=false`.
 
 ## Endpoint
 

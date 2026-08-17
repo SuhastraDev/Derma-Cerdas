@@ -11,7 +11,9 @@ from app.schemas import AnalyzeImageRequest, ImageValidationResponse
 from app.services.analysis_service import VisualAnalysisService
 from app.services.class_mapping import allowed_candidate_classes
 from app.services.dataset_visual_index import DatasetVisualIndex
+from app.services.groq_service import GroqVisualClient
 from app.services.nvidia_service import NvidiaVisualClient, normalize_candidates
+from app.services.provider_factory import visual_client
 
 
 client = TestClient(app)
@@ -31,6 +33,19 @@ def test_health_endpoint() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert isinstance(response.json()["dataset_index_ready"], bool)
+    assert response.json()["provider"] in {"nvidia", "groq"}
+
+
+def test_provider_factory_selects_groq(monkeypatch) -> None:
+    from app.config import settings
+
+    original_provider = settings.ai_provider
+    object.__setattr__(settings, "ai_provider", "groq")
+
+    try:
+        assert visual_client().provider == "groq"
+    finally:
+        object.__setattr__(settings, "ai_provider", original_provider)
 
 
 def test_validate_image_accepts_png_base64() -> None:
@@ -470,3 +485,45 @@ def test_post_with_retry_gives_up_after_repeated_503(monkeypatch) -> None:
 
     assert raised is True
     assert len(calls) == 2
+
+
+def test_groq_chat_completion_uses_openai_compatible_vision_body(monkeypatch) -> None:
+    from app.config import settings
+    from app.services import groq_service as groq_service_module
+
+    captured: dict = {}
+    original_api_key = settings.groq_api_key
+    object.__setattr__(settings, "groq_api_key", "test-key")
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"is_valid_skin_image": true, "candidates": [], "warnings": []}'}}]}
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, headers, json, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(groq_service_module.httpx, "post", fake_post)
+
+    try:
+        GroqVisualClient().chat_completion(
+            "Balas JSON",
+            f"data:image/jpeg;base64,{sample_image_base64()}",
+            response_format={"type": "json_object"},
+        )
+    finally:
+        object.__setattr__(settings, "groq_api_key", original_api_key)
+
+    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["json"]["model"] == settings.groq_model_name
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["json"]["messages"][0]["content"][1]["type"] == "image_url"

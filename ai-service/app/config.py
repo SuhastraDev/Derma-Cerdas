@@ -37,9 +37,12 @@ def service_path(value: str) -> Path:
 class Settings:
     app_name: str = os.getenv("APP_NAME", "DermaCerdas AI Service")
     app_env: str = os.getenv("APP_ENV", "local")
+    ai_provider: str = os.getenv("AI_PROVIDER", "nvidia").strip().lower()
     ai_mock_mode: bool = os.getenv("AI_MOCK_MODE", "true").lower() in {"1", "true", "yes", "on"}
     nvidia_api_key: str | None = os.getenv("NVIDIA_API_KEY") or None
     nvidia_model_name: str = os.getenv("NVIDIA_MODEL_NAME", "meta/llama-3.2-11b-vision-instruct")
+    groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
+    groq_model_name: str = os.getenv("GROQ_MODEL_NAME", "qwen/qwen3.6-27b")
     max_image_size_mb: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "5"))
     allowed_image_mime_types: tuple[str, ...] = tuple(
         item.strip()
