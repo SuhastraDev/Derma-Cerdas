@@ -100,7 +100,7 @@ class NvidiaVisualClient:
                 "temperature": 0.1,
                 "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=15.0,
+            timeout=25.0,
         )
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
@@ -188,7 +188,7 @@ class NvidiaVisualClient:
                     }
                 ],
             },
-            timeout=25.0,
+            timeout=45.0,
         )
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
