@@ -87,6 +87,7 @@ class ConsultationWorkflowService
                 $visualCandidates,
                 $redFlagResult,
                 $visualAnalysis['validation_status'] === 'valid',
+                $complaintFeatures['disease_hints'] ?? [],
             );
 
             $consultation->update([
@@ -290,13 +291,15 @@ class ConsultationWorkflowService
      * @param  array<int, array<string, mixed>>  $textualRankings
      * @param  array<int, array<string, mixed>>  $visualCandidates
      * @param  array<string, mixed>  $redFlagResult
+     * @param  array<int, array<string, mixed>>  $diseaseHints
      */
     private function storeFinalResult(
         Consultation $consultation,
         array $textualRankings,
         array $visualCandidates,
         array $redFlagResult,
-        bool $hasValidatedVisual
+        bool $hasValidatedVisual,
+        array $diseaseHints = []
     ): ConsultationFinalResult {
         if (! $textualRankings) {
             /** @var Disease $fallbackDisease */
@@ -322,6 +325,15 @@ class ConsultationWorkflowService
         // (edukasi/rujuk) alih-alih dipaksakan ke Pt yang tidak relevan. Tanda bahaya
         // tetap didahulukan lewat decide() normal (F07 menggantikan semua aturan lain).
         if (
+            ! $hasRedFlags
+            && $visualDisease
+            && $visualScore >= 0.55
+            && $this->visualMatchesDiseaseHint($visualDisease, $diseaseHints)
+            && in_array($visualDisease->default_action, ['educate_only', 'refer'], true)
+        ) {
+            $decision = $this->fusionDecisionService->decideContextAlignedVisual($visualDisease, $visualScore);
+            $finalDisease = $visualDisease;
+        } elseif (
             ! $hasRedFlags
             && $visualDisease
             && $visualScore >= 0.55
@@ -353,6 +365,27 @@ class ConsultationWorkflowService
             'explanation' => $decision['explanation'],
             'recommendations_snapshot' => $this->recommendationsSnapshot($finalDisease, $decision['can_recommend_medicine']),
         ]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $diseaseHints
+     */
+    private function visualMatchesDiseaseHint(Disease $visualDisease, array $diseaseHints): bool
+    {
+        $hintClasses = collect($diseaseHints)
+            ->map(fn ($hint): mixed => is_array($hint) ? ($hint['dataset_class_name'] ?? null) : null)
+            ->filter(fn ($className): bool => is_string($className) && trim($className) !== '')
+            ->values();
+
+        if ($hintClasses->isEmpty()) {
+            return false;
+        }
+
+        $visualClasses = $visualDisease->loadMissing('datasetMappings')
+            ->datasetMappings
+            ->pluck('dataset_class_name');
+
+        return $visualClasses->intersect($hintClasses)->isNotEmpty();
     }
 
     /**

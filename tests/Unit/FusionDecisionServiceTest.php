@@ -176,6 +176,18 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertStringContainsString('scope', strtolower($result['explanation']));
     }
 
+    public function test_context_aligned_visual_hint_is_education_only(): void
+    {
+        $psoriasis = $this->createDisease('PSORIASIS_PAPULOSQUAMOUS', 'educate_only');
+
+        $result = (new FusionDecisionService())->decideContextAlignedVisual($psoriasis, 0.78);
+
+        $this->assertSame('F09', $result['fusion_rule_code']);
+        $this->assertSame('educate_only', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertStringContainsString('konteks', strtolower($result['explanation']));
+    }
+
     private function createDisease(string $code, string $defaultAction = 'recommend_otc'): Disease
     {
         return Disease::query()->firstOrCreate(

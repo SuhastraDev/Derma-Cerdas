@@ -165,7 +165,7 @@ class ConsultationController extends Controller
                 'fusion_rule_code' => $finalResult->fusion_rule_code,
                 'explanation' => $finalResult->explanation,
                 'recommendations' => $finalResult->recommendations_snapshot ?? [],
-                'education' => $finalResult->fusion_rule_code === 'F08' ? [
+                'education' => in_array($finalResult->fusion_rule_code, ['F08', 'F09'], true) ? [
                     'description' => $finalResult->disease?->description,
                     'source_note' => $finalResult->disease?->source_note,
                 ] : null,

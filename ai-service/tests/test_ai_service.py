@@ -121,6 +121,36 @@ def test_nvidia_response_filters_suggested_symptoms_to_available_question_codes(
     assert payload["suggested_symptom_codes"] == ["G11"]
 
 
+def test_nvidia_response_recovers_python_style_json_after_model_reasoning() -> None:
+    payload = NvidiaVisualClient().response_from_text(
+        "Saya akan menilai gambar terlebih dahulu.\n"
+        "{'is_valid_skin_image': True, 'skin_evidence_score': 0.82, "
+        "'candidates': [{'dataset_class_name': 'Psoriasis', 'visual_score': 0.78, "
+        "'reason': 'Bercak bersisik pada area kulit'}], "
+        "'suggested_symptom_codes': ['G03', 'G11'], 'warnings': [],}",
+        allowed_symptom_codes=["G03", "G11"],
+    )
+
+    assert payload["is_valid_skin_image"] is True
+    assert payload["candidates"][0]["dataset_class_name"] == "Psoriasis"
+    assert payload["suggested_symptom_codes"] == ["G03", "G11"]
+
+
+def test_visual_response_schema_restricts_local_classes_and_symptoms() -> None:
+    response_format = NvidiaVisualClient().visual_response_format(
+        ["Psoriasis", "Dry_Skin_Eczema"],
+        ["G03", "G11"],
+    )
+    schema = response_format["json_schema"]["schema"]
+
+    assert response_format["type"] == "json_schema"
+    assert schema["properties"]["candidates"]["items"]["properties"]["dataset_class_name"]["enum"] == [
+        "Psoriasis",
+        "Dry_Skin_Eczema",
+    ]
+    assert schema["properties"]["suggested_symptom_codes"]["items"]["enum"] == ["G03", "G11"]
+
+
 def test_visual_prompt_contains_complaint_and_question_bank() -> None:
     prompt = NvidiaVisualClient().prompt(
         ["Psoriasis", "Dry_Skin_Eczema"],

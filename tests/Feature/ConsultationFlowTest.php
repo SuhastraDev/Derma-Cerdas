@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Consultation;
 use App\Models\ConsultationFinalResult;
+use App\Models\DatasetClassMapping;
 use App\Models\Disease;
 use App\Models\RedFlag;
 use App\Models\Symptom;
@@ -98,6 +99,71 @@ class ConsultationFlowTest extends TestCase
         $this->assertLessThan(Symptom::query()->where('is_active', true)->count(), $codes->count());
         $this->assertGreaterThanOrEqual(5, $codes->count());
         $this->assertContains('G06', $codes);
+    }
+
+    public function test_context_aligned_psoriasis_visual_result_is_not_replaced_by_eczema_text_result(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $psoriasis = Disease::query()->create([
+            'code' => 'PSORIASIS_PAPULOSQUAMOUS',
+            'name' => 'Psoriasis and papulosquamous disorders',
+            'slug' => 'psoriasis-papulosquamous',
+            'name_indonesian' => 'Psoriasis dan gangguan papuloskuamosa',
+            'description' => 'Edukasi psoriasis.',
+            'severity_scope' => 'moderate',
+            'default_action' => 'educate_only',
+            'is_active' => true,
+        ]);
+
+        DatasetClassMapping::query()->create([
+            'dataset_class_id' => 353,
+            'dataset_class_name' => 'Psoriasis',
+            'nama_indonesia' => 'Psoriasis',
+            'scope_category' => 'edukasi',
+            'boleh_rekomendasi_obat' => false,
+            'default_action' => 'educate_only',
+            'disease_id' => $psoriasis->id,
+        ]);
+
+        $this->mock(AiVisualService::class, function ($mock) use ($psoriasis): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'nvidia',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [[
+                        'disease' => $psoriasis,
+                        'provider' => 'nvidia',
+                        'visual_score' => 0.78,
+                        'visual_reason' => 'Bercak bersisik selaras dengan kandidat visual.',
+                        'raw_response' => ['dataset_class_name' => 'Psoriasis'],
+                    ]],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Psoriasis',
+            'complaint_text' => 'Saya menduga psoriasis, bercak merah dan bersisik sejak beberapa minggu.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'DRY_SCALY_SKIN' => 0.8,
+                'G03' => 0.8,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame($psoriasis->id, $finalResult->disease_id);
+        $this->assertSame('F09', $finalResult->fusion_rule_code);
+        $this->assertSame('educate_only', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
     }
 
     public function test_red_flag_forces_refer_action(): void

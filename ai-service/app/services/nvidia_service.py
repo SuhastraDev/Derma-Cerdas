@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import base64
 import json
 import re
@@ -64,22 +65,32 @@ class NvidiaVisualClient:
             }
 
         try:
-            body = self.text_chat_completion(self.red_flag_prompt(complaint_text, red_flags))
+            body = self.text_chat_completion(
+                self.red_flag_prompt(complaint_text, red_flags),
+                response_format=self.red_flag_response_format(red_flags),
+            )
         except Exception as exc:
             return self.provider_error_response(exc, "NVIDIA NIM red flag assessment")
 
         text = self.completion_text(body)
         parsed = self.parse_json_text(text)
         raw_codes = parsed.get("detected_codes", [])
+        if not isinstance(raw_codes, list):
+            raw_codes = []
+
         valid_codes = {rf["code"] for rf in red_flags}
         detected_codes = [
             code for code in raw_codes if isinstance(code, str) and code in valid_codes
         ]
 
+        warnings = parsed.get("warnings", [])
+        if not isinstance(warnings, list):
+            warnings = []
+
         return {
             "provider_status": "ok",
             "detected_codes": detected_codes,
-            "warnings": parsed.get("warnings", []),
+            "warnings": [str(warning) for warning in warnings],
             "raw_response": {"text": text, "model": settings.nvidia_model_name},
         }
 
@@ -99,16 +110,6 @@ class NvidiaVisualClient:
             "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
             '{"detected_codes": ["KODE1"], "warnings": []}. '
             "Jika tidak ada tanda bahaya yang jelas disebut, balas dengan detected_codes kosong."
-        )
-
-    def text_chat_completion(self, prompt: str) -> dict[str, Any]:
-        return self.post_with_retry(
-            {
-                "model": settings.nvidia_model_name,
-                "temperature": 0.1,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=25.0,
         )
 
     def mock_response(self, classes: list[str]) -> dict[str, Any]:
@@ -139,8 +140,18 @@ class NvidiaVisualClient:
             symptom_questions=symptom_questions or [],
         )
 
+        symptom_codes = [
+            str(question.get("code"))
+            for question in (symptom_questions or [])
+            if question.get("code")
+        ]
+
         try:
-            body = self.chat_completion(prompt, data_url)
+            body = self.chat_completion(
+                prompt,
+                data_url,
+                response_format=self.visual_response_format(classes, symptom_codes),
+            )
         except Exception as exc:
             return self.provider_error_response(exc, "NVIDIA NIM API")
 
@@ -148,11 +159,7 @@ class NvidiaVisualClient:
 
         return self.response_from_text(
             text,
-            allowed_symptom_codes=[
-                str(question.get("code"))
-                for question in (symptom_questions or [])
-                if question.get("code")
-            ],
+            allowed_symptom_codes=symptom_codes,
         )
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
@@ -167,7 +174,11 @@ class NvidiaVisualClient:
         data_url = self.image_data_url(image_base64)
 
         try:
-            body = self.chat_completion(self.skin_filter_prompt(), data_url)
+            body = self.chat_completion(
+                self.skin_filter_prompt(),
+                data_url,
+                response_format=self.skin_response_format(),
+            )
         except Exception as exc:
             return self.provider_error_response(exc, "NVIDIA NIM skin filter")
 
@@ -196,23 +207,190 @@ class NvidiaVisualClient:
         except Exception:
             return raw
 
-    def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
-        return self.post_with_retry(
-            {
-                "model": settings.nvidia_model_name,
-                "temperature": 0.2,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": image_data_url}},
-                        ],
-                    }
-                ],
-            },
-            timeout=45.0,
+    def chat_completion(
+        self,
+        prompt: str,
+        image_data_url: str,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        request_body: dict[str, Any] = {
+            "model": settings.nvidia_model_name,
+            "temperature": 0.1,
+            "max_tokens": 700,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ],
+                }
+            ],
+        }
+
+        if response_format is not None:
+            request_body["response_format"] = response_format
+
+        try:
+            return self.post_with_retry(request_body, timeout=45.0)
+        except httpx.HTTPStatusError as exception:
+            if response_format is None or not self.is_structured_output_rejection(exception):
+                raise
+
+            request_body.pop("response_format", None)
+
+            return self.post_with_retry(request_body, timeout=45.0)
+
+    def text_chat_completion(
+        self,
+        prompt: str,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        request_body: dict[str, Any] = {
+            "model": settings.nvidia_model_name,
+            "temperature": 0.1,
+            "max_tokens": 256,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        if response_format is not None:
+            request_body["response_format"] = response_format
+
+        try:
+            return self.post_with_retry(request_body, timeout=25.0)
+        except httpx.HTTPStatusError as exception:
+            if response_format is None or not self.is_structured_output_rejection(exception):
+                raise
+
+            request_body.pop("response_format", None)
+
+            return self.post_with_retry(request_body, timeout=25.0)
+
+    def is_structured_output_rejection(self, exception: httpx.HTTPStatusError) -> bool:
+        status_code = getattr(getattr(exception, "response", None), "status_code", None)
+        detail = self.describe_http_error(exception).lower()
+
+        return status_code in {400, 422} and any(
+            marker in detail
+            for marker in ("response_format", "json_schema", "structured output", "structured_output")
         )
+
+    def visual_response_format(
+        self,
+        classes: list[str],
+        symptom_codes: list[str],
+    ) -> dict[str, Any]:
+        candidate_class_schema = self.enum_schema(classes)
+        symptom_code_schema = self.enum_schema(symptom_codes)
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "dermacerdas_visual_analysis",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "is_valid_skin_image": {"type": "boolean"},
+                        "skin_evidence_score": {"type": "number", "minimum": 0, "maximum": 1},
+                        "candidates": {
+                            "type": "array",
+                            "maxItems": 3,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "dataset_class_name": candidate_class_schema,
+                                    "visual_score": {"type": "number", "minimum": 0, "maximum": 1},
+                                    "reason": {"type": "string"},
+                                },
+                                "required": ["dataset_class_name", "visual_score", "reason"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "suggested_symptom_codes": {
+                            "type": "array",
+                            "maxItems": 8,
+                            "items": symptom_code_schema,
+                        },
+                        "warnings": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "is_valid_skin_image",
+                        "skin_evidence_score",
+                        "candidates",
+                        "suggested_symptom_codes",
+                        "warnings",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def skin_response_format(self) -> dict[str, Any]:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "dermacerdas_skin_validation",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "contains_human_body_part": {"type": "boolean"},
+                        "contains_visible_skin": {"type": "boolean"},
+                        "is_valid_skin_image": {"type": "boolean"},
+                        "skin_evidence_score": {"type": "number", "minimum": 0, "maximum": 1},
+                        "reason": {"type": "string"},
+                        "warnings": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "contains_human_body_part",
+                        "contains_visible_skin",
+                        "is_valid_skin_image",
+                        "skin_evidence_score",
+                        "reason",
+                        "warnings",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def red_flag_response_format(self, red_flags: list[dict[str, str]]) -> dict[str, Any]:
+        codes = [str(red_flag.get("code")) for red_flag in red_flags if red_flag.get("code")]
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "dermacerdas_red_flag_assessment",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "detected_codes": {
+                            "type": "array",
+                            "items": self.enum_schema(codes),
+                        },
+                        "warnings": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["detected_codes", "warnings"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+    def enum_schema(self, values: list[str]) -> dict[str, Any]:
+        unique_values = list(dict.fromkeys(value for value in values if value))
+
+        if not unique_values:
+            return {"type": "string"}
+
+        return {"type": "string", "enum": unique_values}
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
         """Retry once on NVIDIA-side transient errors (rate limit / 5xx).
@@ -254,7 +432,12 @@ class NvidiaVisualClient:
         if not choices:
             return ""
 
-        return choices[0].get("message", {}).get("content", "") or ""
+        content = choices[0].get("message", {}).get("content", "") or ""
+
+        if isinstance(content, str):
+            return content
+
+        return json.dumps(content, ensure_ascii=False)
 
     def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
         error = self.describe_http_error(exception)
@@ -304,6 +487,9 @@ class NvidiaVisualClient:
         parsed = self.parse_json_text(text)
 
         raw_candidates = parsed.get("candidates", [])
+        if not isinstance(raw_candidates, list):
+            raw_candidates = []
+
         has_candidates = isinstance(raw_candidates, list) and len(raw_candidates) > 0
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
         is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates or skin_evidence_score >= 0.35
@@ -320,13 +506,16 @@ class NvidiaVisualClient:
             ]
 
         suggested_symptom_codes = list(dict.fromkeys(suggested_symptom_codes))[:8]
+        warnings = parsed.get("warnings", [])
+        if not isinstance(warnings, list):
+            warnings = []
 
         return {
             "provider_status": "ok",
             "is_valid_skin_image": is_valid_skin_image,
             "candidates": raw_candidates,
             "suggested_symptom_codes": suggested_symptom_codes,
-            "warnings": parsed.get("warnings", []),
+            "warnings": [str(warning) for warning in warnings],
             "raw_response": {
                 "text": text,
                 "model": settings.nvidia_model_name,
@@ -496,33 +685,59 @@ class NvidiaVisualClient:
     def parse_json_text(self, text: str) -> dict[str, Any]:
         # Reasoning models may prefix the answer with a <think>...</think>
         # block before the actual JSON payload.
+        if not isinstance(text, str):
+            return {
+                "is_valid_skin_image": False,
+                "candidates": [],
+                "warnings": ["Respons NVIDIA NIM tidak berbentuk teks JSON."],
+            }
+
         cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
 
         fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
+        sources = [cleaned]
 
         if fenced:
-            cleaned = fenced.group(1)
+            sources.insert(0, fenced.group(1))
 
-        data = self.try_parse_json(cleaned)
+        parsed_documents: list[dict[str, Any]] = []
 
-        if data is None:
-            data = self.try_parse_json(self.extract_first_json_object(cleaned))
+        for source in sources:
+            direct_data = self.try_parse_json(source) or self.try_parse_python_literal(source)
 
-        if data is None:
+            if isinstance(direct_data, dict):
+                parsed_documents.append(direct_data)
+
+            for object_text in self.extract_json_objects(source):
+                data = self.try_parse_json(object_text) or self.try_parse_python_literal(object_text)
+
+                if isinstance(data, dict):
+                    parsed_documents.append(data)
+
+        if not parsed_documents:
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
                 "warnings": ["Respons NVIDIA NIM tidak berbentuk JSON valid."],
             }
 
-        if not isinstance(data, dict):
-            return {
-                "is_valid_skin_image": False,
-                "candidates": [],
-                "warnings": ["Respons NVIDIA NIM tidak sesuai struktur yang diminta."],
+        def document_score(document: dict[str, Any]) -> int:
+            recognized_keys = {
+                "is_valid_skin_image",
+                "skin_evidence_score",
+                "candidates",
+                "suggested_symptom_codes",
+                "detected_codes",
+                "contains_human_body_part",
+                "contains_visible_skin",
             }
 
-        return data
+            return sum(1 for key in recognized_keys if key in document)
+
+        return max(
+            enumerate(parsed_documents),
+            key=lambda item: (document_score(item[1]), item[0]),
+        )[1]
 
     def try_parse_json(self, text: str | None) -> Any:
         if not text:
@@ -533,40 +748,51 @@ class NvidiaVisualClient:
         except json.JSONDecodeError:
             return None
 
-    def extract_first_json_object(self, text: str) -> str | None:
-        """Scan for the first balanced {...} object, tolerating any prose around it."""
-        start = text.find("{")
-
-        if start == -1:
+    def try_parse_python_literal(self, text: str | None) -> Any:
+        if not text:
             return None
 
+        try:
+            return ast.literal_eval(text)
+        except (SyntaxError, ValueError, TypeError):
+            return None
+
+    def extract_json_objects(self, text: str) -> list[str]:
+        objects: list[str] = []
+        start: int | None = None
         depth = 0
-        in_string = False
+        quote: str | None = None
         escape = False
 
-        for index in range(start, len(text)):
-            char = text[index]
-
-            if in_string:
+        for index, char in enumerate(text):
+            if quote is not None:
                 if escape:
                     escape = False
                 elif char == "\\":
                     escape = True
-                elif char == '"':
-                    in_string = False
+                elif char == quote:
+                    quote = None
                 continue
 
-            if char == '"':
-                in_string = True
-            elif char == "{":
+            if char in {"\"", "'"}:
+                quote = char
+            elif char == "{" and depth == 0:
+                start = index
+                depth = 1
+            elif char == "{" and depth > 0:
                 depth += 1
-            elif char == "}":
+            elif char == "}" and depth > 0:
                 depth -= 1
 
-                if depth == 0:
-                    return text[start:index + 1]
+                if depth == 0 and start is not None:
+                    objects.append(text[start:index + 1])
+                    start = None
 
-        return None
+        return objects
+
+    def extract_first_json_object(self, text: str) -> str | None:
+        """Return the first balanced object, tolerating prose around it."""
+        return next(iter(self.extract_json_objects(text)), None)
 
 
 def normalize_candidates(

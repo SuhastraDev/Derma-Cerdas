@@ -250,6 +250,38 @@ class FusionDecisionService
         ];
     }
 
+    /**
+     * F09: the user supplied a disease name as context and the visual model
+     * returned the same mapped disease. This is stronger than text-only CF,
+     * but it is still not a confirmed diagnosis and must never unlock OTC
+     * medicine from the user's own label.
+     */
+    public function decideContextAlignedVisual(Disease $disease, float $visualScore): array
+    {
+        $visualScore = $this->clamp($visualScore);
+        $action = $disease->default_action === 'refer' ? 'refer' : 'educate_only';
+        $diseaseName = $disease->name_indonesian ?: $disease->name;
+
+        return [
+            'disease' => $disease,
+            'visual_score' => $visualScore,
+            'textual_cf' => 0.0,
+            'fusion_score' => $visualScore,
+            'fusion_score_percent' => $this->round($visualScore * 100),
+            'fusion_rule_code' => 'F09',
+            'action' => $action,
+            'can_recommend_medicine' => false,
+            'explanation' => sprintf(
+                'Aturan F09: penyakit yang disebut pengguna sebagai konteks selaras dengan kandidat visual %s (skor %.1f%%). Hasil ini tetap bukan diagnosis terkonfirmasi dan tidak disertai rekomendasi obat.%s',
+                $diseaseName,
+                $visualScore * 100,
+                $action === 'refer'
+                    ? ' Pengguna diarahkan untuk diperiksa tenaga kesehatan.'
+                    : ' Informasi digunakan untuk edukasi awal dan perlu dikonfirmasi tenaga kesehatan.'
+            ),
+        ];
+    }
+
     private function enforceDiseaseScope(Disease $disease, string $action): string
     {
         return match ($disease->default_action) {
