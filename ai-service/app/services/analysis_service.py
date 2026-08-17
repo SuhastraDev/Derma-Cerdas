@@ -100,10 +100,16 @@ class VisualAnalysisService:
         if not candidates and is_valid_skin_image:
             warnings.append("Tidak ada kandidat visual yang cocok dengan mapping MVP.")
 
+        outside_scope = bool(ai_result.get("outside_scope", False)) or (
+            is_valid_skin_image and not candidates
+        )
+
         return AnalyzeImageResponse(
             provider=self.client.provider,
             provider_status=provider_status,
             is_valid_skin_image=is_valid_skin_image,
+            outside_scope=outside_scope,
+            observed_description=str(ai_result.get("observed_description", "") or ""),
             candidates=candidates,
             suggested_symptom_codes=suggested_symptom_codes,
             warnings=warnings,

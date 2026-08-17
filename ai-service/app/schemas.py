@@ -40,6 +40,11 @@ class AnalyzeImageResponse(BaseModel):
     provider: str
     provider_status: str = "ok"
     is_valid_skin_image: bool
+    # Model menyatakan kondisi berada di luar daftar class, dan menggambarkan apa
+    # yang terlihat tanpa menyebut nama penyakit. Deskripsi itu dipakai sistem
+    # untuk mencarikan rujukan alih-alih memaksakan salah satu class.
+    outside_scope: bool = False
+    observed_description: str = ""
     candidates: list[VisualCandidate] = Field(default_factory=list)
     suggested_symptom_codes: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

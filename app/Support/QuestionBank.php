@@ -3,7 +3,7 @@
 namespace App\Support;
 
 /**
- * Bank pertanyaan konsultasi dan matriks Certainty Factor untuk 15 kelas.
+  * Bank pertanyaan konsultasi dan matriks Certainty Factor untuk 16 kelas.
  *
  * RANCANGAN
  * ---------
@@ -33,7 +33,7 @@ namespace App\Support;
 class QuestionBank
 {
     /**
-     * 15 kelas ruang lingkup, dipetakan ke nama kelas SD-198.
+     * 16 kelas ruang lingkup, dipetakan ke nama kelas SD-198.
      *
      * dataset_class_id memakai nomor resmi SD-198 yang sudah terpakai pada basis
      * data produksi. Vitiligo semula dipertimbangkan tetapi nomor resminya tidak
@@ -59,6 +59,8 @@ class QuestionBank
             ['code' => 'CANDIDIASIS', 'name' => 'Candidiasis', 'name_indonesian' => 'Kandidiasis kulit', 'dataset_class' => 'Candidiasis', 'dataset_class_id' => 31, 'default_action' => 'educate_only', 'description' => 'Infeksi jamur pada lipatan kulit lembap, khas disertai bintik satelit di sekitarnya.'],
             ['code' => 'PITYRIASIS_ALBA', 'name' => 'Pityriasis Alba', 'name_indonesian' => 'Pitiriasis alba', 'dataset_class' => 'Pityriasis_Alba', 'dataset_class_id' => 146, 'default_action' => 'educate_only', 'description' => 'Bercak putih samar bersisik halus, umum pada anak dan sering dikira panu.'],
             ['code' => 'ONYCHOMYCOSIS', 'name' => 'Onychomycosis', 'name_indonesian' => 'Jamur kuku', 'dataset_class' => 'Onychomycosis', 'dataset_class_id' => 139, 'default_action' => 'educate_only', 'description' => 'Infeksi jamur pada kuku sehingga kuku menebal, rapuh, dan berubah warna.'],
+
+            ['code' => 'KELOID', 'name' => 'Keloid', 'name_indonesian' => 'Keloid', 'dataset_class' => 'Keloid', 'dataset_class_id' => 93, 'default_action' => 'educate_only', 'description' => 'Jaringan parut menonjol yang tumbuh melebihi batas luka asal, lazim pada kulit berpigmen gelap.'],
 
             ['code' => 'IMPETIGO', 'name' => 'Impetigo', 'name_indonesian' => 'Impetigo', 'dataset_class' => 'Impetigo', 'dataset_class_id' => 89, 'default_action' => 'refer', 'description' => 'Infeksi bakteri menular dengan krusta kuning keemasan, memerlukan penanganan tenaga kesehatan.'],
             ['code' => 'HERPES_ZOSTER', 'name' => 'Herpes Zoster', 'name_indonesian' => 'Cacar ular', 'dataset_class' => 'Herpes_Zoster', 'dataset_class_id' => 83, 'default_action' => 'refer', 'description' => 'Reaktivasi virus varicella berupa gelembung bergerombol satu sisi tubuh disertai nyeri.'],
@@ -164,6 +166,7 @@ class QuestionBank
                 'options' => [
                     'P7_KONTAK' => ['Setelah kontak logam, kosmetik, sabun, atau tanaman', 'Keluhan muncul di tempat yang bersentuhan bahan tersebut'],
                     'P7_KERINGAT' => ['Bertambah saat berkeringat atau lembap', 'Memburuk setelah olahraga atau memakai pakaian ketat'],
+                    'P7_BEKASLUKA' => ['Muncul di bekas luka, tindikan, atau operasi', 'Tumbuh pada tempat kulit pernah terluka, termasuk bekas jerawat'],
                     'P7_OBAT' => ['Setelah minum obat baru', 'Muncul dalam beberapa hari setelah mulai obat'],
                     'P7_TIDAKADA' => ['Tidak ada pemicu yang jelas', 'Muncul begitu saja'],
                     'P7_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
@@ -258,6 +261,13 @@ class QuestionBank
             'ONYCHOMYCOSIS' => [
                 'P1_KUKU' => 0.80, 'P3_TEBAL' => 0.20,
                 'P4_TIDAKTERASA' => 0.40, 'P5_TAHUN' => 0.60,
+            ],
+            'KELOID' => [
+                'P1_BADAN' => 0.60, 'P1_WAJAH' => 0.40,
+                'P2_PLAK' => 0.60, 'P3_TIDAKADA' => 0.60,
+                'P4_GATAL' => 0.40, 'P4_NYERI' => 0.20,
+                'P5_TAHUN' => 0.60, 'P6_SETEMPAT' => 0.60,
+                'P7_BEKASLUKA' => 0.80,
             ],
             'IMPETIGO' => [
                 'P1_WAJAH' => 0.60, 'P2_KERAK' => 0.80,

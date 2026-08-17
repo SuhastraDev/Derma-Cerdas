@@ -592,8 +592,13 @@ class NvidiaVisualClient:
             "Set is_valid_skin_image false hanya jika objek utama jelas bukan manusia/area kulit, misalnya makanan, dokumen, benda, "
             "layar, pemandangan, atau file rusak. Jangan mensyaratkan penyakit terlihat jelas untuk menyatakan kulit valid. "
             "Isi skin_evidence_score 0.0 sampai 1.0 berdasarkan keyakinan bahwa gambar berisi kulit/tubuh manusia. "
-            "Tugas kedua adalah kandidat awal: jika filter kulit valid, pilih maksimal 3 kandidat dari daftar class berikut bila ada yang mirip. "
-            "Salin dataset_class_name persis dari daftar dan jangan membuat nama class baru: "
+            "Tugas kedua adalah kandidat awal. Daftar class di bawah TIDAK mencakup seluruh penyakit kulit - "
+            "daftar ini sengaja sempit. Karena itu MENOLAK MENJAWAB adalah jawaban yang benar dan diharapkan "
+            "setiap kali gambar tidak benar-benar cocok dengan salah satu class. "
+            "JANGAN memilih class hanya karena paling mendekati. Jika keyakinan Anda di bawah 0.6, "
+            "kembalikan candidates kosong dan set outside_scope true. Salah menyebut penyakit jauh lebih merugikan "
+            "pengguna daripada mengaku tidak tahu. Bila memang cocok, pilih maksimal 3 kandidat dan salin "
+            "dataset_class_name persis dari daftar, jangan membuat nama class baru: "
             f"{class_list}. "
             "Sistem lokal juga menghitung kemiripan warna, pola spasial, dan tekstur terhadap centroid gambar dataset. "
             f"Hint retrieval dataset: {retrieval_hints}. "
@@ -603,11 +608,15 @@ class NvidiaVisualClient:
             "Daftar pertanyaan gejala lokal berikut adalah satu-satunya kode yang boleh disarankan: "
             f"{symptom_list}. Pilih maksimal 8 kode pertanyaan yang paling informatif dari daftar tersebut. "
             "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
-            '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "candidates": ['
+            '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "outside_scope": false, '
+            '"observed_description": "ciri visual yang terlihat, dalam Bahasa Indonesia", "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
-            '"reason": "alasan visual singkat"}], "suggested_symptom_codes": ["G06", "G08"], "warnings": []}. '
-            "Jika gambar valid sebagai kulit tetapi tidak cocok dengan daftar class, tetap set is_valid_skin_image true, "
-            "skin_evidence_score tinggi, candidates kosong, dan jelaskan kualitas/keterbatasan di warnings."
+            '"reason": "alasan visual singkat"}], "suggested_symptom_codes": ["P2_CINCIN", "P8_TENGAHBERSIH"], "warnings": []}. '
+            "observed_description WAJIB diisi apa pun hasilnya: sebutkan bentuk, warna, permukaan, batas, dan lokasi "
+            "lesi yang benar-benar terlihat - tanpa menyebut nama penyakit. Deskripsi ini dipakai sistem untuk mencarikan "
+            "rujukan ketika kondisi berada di luar daftar. "
+            "Jika gambar valid sebagai kulit tetapi tidak cocok dengan daftar class, set is_valid_skin_image true, "
+            "outside_scope true, candidates kosong, dan tetap isi observed_description selengkap mungkin."
         )
 
     def skin_evidence_score(self, value: Any) -> float:

@@ -134,6 +134,7 @@ class ComplaintExtractionService
 
             'P7_KONTAK' => [0.7, ['sabun', 'detergen', 'kosmetik', 'skincare', 'parfum', 'logam', 'tanaman', 'alergi']],
             'P7_KERINGAT' => [0.7, ['berkeringat', 'keringat', 'lembap', 'lembab']],
+            'P7_BEKASLUKA' => [0.8, ['bekas luka', 'bekas tindik', 'bekas operasi', 'bekas jerawat', 'keloid']],
             'P7_OBAT' => [0.7, ['minum obat', 'setelah obat', 'obat baru']],
 
             'P8_TENGAHBERSIH' => [0.8, ['tengah lebih bersih', 'tengah bersih', 'tengah normal']],
