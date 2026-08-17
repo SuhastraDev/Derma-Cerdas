@@ -3,6 +3,7 @@ import { Head, Link } from '@inertiajs/react';
 import {
     AlertTriangle,
     ArrowLeft,
+    BookOpen,
     CheckCircle2,
     ClipboardCheck,
     Download,
@@ -50,6 +51,10 @@ type FinalResult = {
         warnings: string | null;
         recommendation_note: string | null;
     }>;
+    education: {
+        description: string | null;
+        source_note: string | null;
+    } | null;
 } | null;
 
 type RedFlag = {
@@ -537,6 +542,35 @@ export default function Result({
                                 </article>
                             ))}
                         </div>
+                    </section>
+                )}
+
+                {finalResult?.education && (finalResult.education.description || finalResult.education.source_note) && (
+                    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-sm font-semibold text-orange-600">
+                                    Info edukasi
+                                </p>
+                                <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                                    Bukan rekomendasi pengobatan
+                                </h2>
+                            </div>
+                            <BookOpen className="h-6 w-6 text-slate-500" />
+                        </div>
+                        {finalResult.education.description && (
+                            <p className="mt-4 text-sm leading-6 text-slate-700">
+                                {finalResult.education.description}
+                            </p>
+                        )}
+                        {finalResult.education.source_note && (
+                            <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500">
+                                Sumber: {finalResult.education.source_note}
+                            </p>
+                        )}
+                        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                            Ini adalah informasi umum, bukan diagnosis pasti atau rekomendasi obat. Sistem belum memiliki basis pengetahuan gejala tervalidasi untuk kondisi ini — tetap konsultasikan ke dokter atau tenaga kesehatan untuk kepastian.
+                        </p>
                     </section>
                 )}
 

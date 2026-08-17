@@ -201,6 +201,38 @@ class FusionDecisionService
         };
     }
 
+    /**
+     * F08: kandidat visual teratas cocok dengan penyakit yang belum punya basis
+     * pengetahuan gejala/CF tervalidasi (di luar 5 penyakit naskah dan MVP awal).
+     * Temuan visual tetap ditampilkan apa adanya sebagai informasi edukasi
+     * dengan sumber rujukan, tapi TIDAK PERNAH menghasilkan rekomendasi obat -
+     * hanya arahan edukasi atau rujuk sesuai default_action penyakit tersebut.
+     */
+    public function decideVisualOnly(Disease $disease, float $visualScore): array
+    {
+        $visualScore = $this->clamp($visualScore);
+        $action = $disease->default_action === 'refer' ? 'refer' : 'educate_only';
+
+        return [
+            'disease' => $disease,
+            'visual_score' => $visualScore,
+            'textual_cf' => 0.0,
+            'fusion_score' => $visualScore,
+            'fusion_score_percent' => $this->round($visualScore * 100),
+            'fusion_rule_code' => 'F08',
+            'action' => $action,
+            'can_recommend_medicine' => false,
+            'explanation' => sprintf(
+                'Aturan F08: analisis visual mengarah ke %s (skor %.1f%%), tetapi penyakit ini belum memiliki basis pengetahuan gejala/CF tervalidasi di sistem. Informasi ditampilkan sebagai edukasi awal berdasarkan temuan visual, bukan diagnosis, sehingga tidak ada rekomendasi obat. %s',
+                $disease->name_indonesian ?: $disease->name,
+                $visualScore * 100,
+                $action === 'refer'
+                    ? 'Kondisi ini disarankan untuk segera diperiksakan ke tenaga kesehatan.'
+                    : 'Tetap disarankan konsultasi ke tenaga kesehatan untuk kepastian diagnosis.'
+            ),
+        ];
+    }
+
     private function clamp(float $value): float
     {
         return max(0.0, min(1.0, $value));

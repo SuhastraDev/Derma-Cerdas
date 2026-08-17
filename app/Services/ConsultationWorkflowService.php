@@ -303,26 +303,44 @@ class ConsultationWorkflowService
         $topVisual = $visualCandidates[0] ?? null;
         $visualDisease = $topVisual ? $topVisual['disease'] : null;
         $visualScore = $topVisual ? (float) $topVisual['visual_score'] : 0.0;
+        $hasRedFlags = (bool) ($redFlagResult['has_red_flags'] ?? false);
 
-        $decision = $this->fusionDecisionService->decide(
-            textualDisease: $textualDisease,
-            textualCf: $textualCf,
-            visualDisease: $visualDisease,
-            visualScore: $visualScore,
-            visualAvailable: $hasValidatedVisual && $topVisual !== null,
-            redFlagResult: $redFlagResult,
-        );
+        // F08: kandidat visual mengarah ke penyakit tanpa basis gejala/CF tervalidasi
+        // (di luar cakupan naskah/MVP) dengan keyakinan visual memadai, sedangkan hasil
+        // gejala nyaris tidak berbukti apa pun. Tampilkan temuan visual itu langsung
+        // (edukasi/rujuk) alih-alih dipaksakan ke Pt yang tidak relevan. Tanda bahaya
+        // tetap didahulukan lewat decide() normal (F07 menggantikan semua aturan lain).
+        if (
+            ! $hasRedFlags
+            && $visualDisease
+            && $visualScore >= 0.55
+            && $textualCf < 0.10
+            && ! $visualDisease->symptomRules()->exists()
+        ) {
+            $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);
+            $finalDisease = $visualDisease;
+        } else {
+            $decision = $this->fusionDecisionService->decide(
+                textualDisease: $textualDisease,
+                textualCf: $textualCf,
+                visualDisease: $visualDisease,
+                visualScore: $visualScore,
+                visualAvailable: $hasValidatedVisual && $topVisual !== null,
+                redFlagResult: $redFlagResult,
+            );
+            $finalDisease = $textualDisease;
+        }
 
         return ConsultationFinalResult::query()->create([
             'consultation_id' => $consultation->id,
-            'disease_id' => $textualDisease->id,
+            'disease_id' => $finalDisease->id,
             'textual_cf' => $decision['textual_cf'],
             'visual_score' => $decision['visual_score'],
             'fusion_score' => $decision['fusion_score'],
             'action' => $decision['action'],
             'fusion_rule_code' => $decision['fusion_rule_code'],
             'explanation' => $decision['explanation'],
-            'recommendations_snapshot' => $this->recommendationsSnapshot($textualDisease, $decision['can_recommend_medicine']),
+            'recommendations_snapshot' => $this->recommendationsSnapshot($finalDisease, $decision['can_recommend_medicine']),
         ]);
     }
 

@@ -157,6 +157,10 @@ class ConsultationController extends Controller
                 'fusion_rule_code' => $finalResult->fusion_rule_code,
                 'explanation' => $finalResult->explanation,
                 'recommendations' => $finalResult->recommendations_snapshot ?? [],
+                'education' => $finalResult->fusion_rule_code === 'F08' ? [
+                    'description' => $finalResult->disease?->description,
+                    'source_note' => $finalResult->disease?->source_note,
+                ] : null,
             ] : null,
             'redFlags' => $consultation->redFlags
                 ->filter(fn ($item): bool => (bool) $item->detected)

@@ -140,7 +140,24 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertFalse($result['can_recommend_medicine']);
     }
 
-    private function createDisease(string $code): Disease
+    public function test_f08_visual_only_finding_never_recommends_medicine(): void
+    {
+        $refer = $this->createDisease('SKIN_CANCER_REFER', 'refer');
+        $educate = $this->createDisease('BENIGN_LESION', 'educate_only');
+
+        $referResult = (new FusionDecisionService())->decideVisualOnly($refer, 0.8);
+        $educateResult = (new FusionDecisionService())->decideVisualOnly($educate, 0.7);
+
+        $this->assertSame('F08', $referResult['fusion_rule_code']);
+        $this->assertSame('refer', $referResult['action']);
+        $this->assertFalse($referResult['can_recommend_medicine']);
+
+        $this->assertSame('F08', $educateResult['fusion_rule_code']);
+        $this->assertSame('educate_only', $educateResult['action']);
+        $this->assertFalse($educateResult['can_recommend_medicine']);
+    }
+
+    private function createDisease(string $code, string $defaultAction = 'recommend_otc'): Disease
     {
         return Disease::query()->firstOrCreate(
             ['code' => $code],
@@ -149,7 +166,7 @@ class FusionDecisionServiceTest extends TestCase
                 'slug' => strtolower(str_replace('_', '-', $code)),
                 'name_indonesian' => str_replace('_', ' ', strtolower($code)),
                 'severity_scope' => 'mild',
-                'default_action' => 'recommend_otc',
+                'default_action' => $defaultAction,
                 'is_active' => true,
             ],
         );

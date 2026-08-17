@@ -197,7 +197,7 @@ def test_dataset_visual_index_builds_and_retrieves_matching_class(tmp_path) -> N
 
 def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
     class EmptyDatasetIndex:
-        def search_base64(self, image_base64, allowed_classes):
+        def search_base64(self, image_base64, allowed_classes, limit=20):
             return []
 
     class QuotaExhaustedClient:
