@@ -18,6 +18,21 @@ class GroqVisualClient(NvidiaVisualClient):
     visual_candidate_limit = 12
     total_candidate_cap = 28
 
+    def api_keys(self) -> list[str]:
+        """Seluruh kunci yang tersedia, berurutan.
+
+        GROQ_API_KEYS (dipisah koma) diutamakan; GROQ_API_KEY tunggal tetap
+        didukung agar konfigurasi lama tidak rusak. Penjaga mode mock WAJIB
+        memakai daftar ini - memeriksa groq_api_key saja membuat sistem diam-diam
+        masuk mode mock ketika pengguna hanya mengisi GROQ_API_KEYS.
+        """
+        kunci = [k for k in settings.groq_api_keys if k]
+
+        if kunci:
+            return kunci
+
+        return [settings.groq_api_key] if settings.groq_api_key else []
+
     def analyze(
         self,
         image_base64: str,
@@ -26,7 +41,7 @@ class GroqVisualClient(NvidiaVisualClient):
         complaint_text: str = "",
         symptom_questions: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not self.api_keys():
             return self.mock_response(candidate_classes)
 
         return self.provider_response(
@@ -41,7 +56,7 @@ class GroqVisualClient(NvidiaVisualClient):
         if not red_flags:
             return {"provider_status": "ok", "detected_codes": [], "warnings": [], "raw_response": {}}
 
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not self.api_keys():
             return {
                 "provider_status": "mock_mode",
                 "detected_codes": [],
@@ -113,7 +128,7 @@ class GroqVisualClient(NvidiaVisualClient):
         )
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not self.api_keys():
             return {
                 "provider_status": "mock_mode",
                 "is_valid_skin_image": False,
@@ -176,15 +191,6 @@ class GroqVisualClient(NvidiaVisualClient):
             request_body["response_format"] = response_format
 
         return self.post_with_retry(request_body, timeout=25.0)
-
-    def api_keys(self) -> list[str]:
-        """Kunci yang tersedia, urut. Kunci tunggal tetap didukung."""
-        kunci = [k for k in settings.groq_api_keys if k]
-
-        if kunci:
-            return kunci
-
-        return [settings.groq_api_key] if settings.groq_api_key else []
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
         """Coba tiap kunci berurutan; kuota habis pada satu kunci bukan alasan menyerah.
