@@ -19,8 +19,7 @@ class AdaptiveQuestionService
         array $aiSuggestedCodes = [],
         int $min = 5,
         int $max = 8
-    ): Collection
-    {
+    ): Collection {
         $scores = [];
 
         // AI may choose which questions are useful, but it must never answer
@@ -35,6 +34,10 @@ class AdaptiveQuestionService
 
         foreach (($complaintFeatures['symptom_evidence'] ?? []) as $code => $evidence) {
             $scores[$code] = ($scores[$code] ?? 0) + (float) ($evidence['score'] ?? 0) + 1.2;
+        }
+
+        foreach ($this->candidateProfileBoosts($complaintFeatures, $visualCandidates) as $code => $boost) {
+            $scores[$code] = ($scores[$code] ?? 0) + $boost;
         }
 
         collect($visualCandidates)
@@ -87,7 +90,199 @@ class AdaptiveQuestionService
             ->whereIn('code', $selectedCodes)
             ->get(['id', 'code', 'name', 'question'])
             ->sortBy(fn (Symptom $symptom): int => array_search($symptom->code, $selectedCodes, true))
+            ->map(fn (Symptom $symptom): Symptom => $this->applyQuestionOverride(
+                $symptom,
+                $complaintFeatures,
+                $visualCandidates
+            ))
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $complaintFeatures
+     * @param  array<int, array<string, mixed>>  $visualCandidates
+     * @return array<string, float>
+     */
+    private function candidateProfileBoosts(array $complaintFeatures, array $visualCandidates): array
+    {
+        $profiles = $this->activeProfiles($complaintFeatures, $visualCandidates);
+        $boosts = [];
+
+        foreach ($profiles as $profile) {
+            foreach (($this->profileSymptoms()[$profile] ?? []) as $code => $boost) {
+                $boosts[$code] = max($boosts[$code] ?? 0.0, $boost);
+            }
+        }
+
+        return $boosts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $complaintFeatures
+     * @param  array<int, array<string, mixed>>  $visualCandidates
+     * @return array<int, string>
+     */
+    private function activeProfiles(array $complaintFeatures, array $visualCandidates): array
+    {
+        $tokens = collect($complaintFeatures['disease_hints'] ?? [])
+            ->flatMap(fn ($hint): array => is_array($hint) ? [
+                $hint['dataset_class_name'] ?? null,
+                $hint['disease_code'] ?? null,
+            ] : [])
+            ->merge(collect($visualCandidates)->flatMap(function (array $candidate): array {
+                /** @var Disease|null $disease */
+                $disease = $candidate['disease'] ?? null;
+
+                if (! $disease) {
+                    return [];
+                }
+
+                return [
+                    $disease->code,
+                    $disease->name,
+                    $disease->name_indonesian,
+                    ...$disease->loadMissing('datasetMappings')->datasetMappings->pluck('dataset_class_name')->all(),
+                ];
+            }))
+            ->filter(fn ($token): bool => is_string($token) && trim($token) !== '')
+            ->map(fn (string $token): string => str($token)->lower()->replace(['_', '-'], ' ')->value())
+            ->values();
+
+        if ($tokens->isEmpty()) {
+            return [];
+        }
+
+        $profiles = [];
+
+        foreach ($tokens as $token) {
+            $profiles[] = match (true) {
+                str_contains($token, 'psoriasis') => 'psoriasis',
+                str_contains($token, 'tinea') || str_contains($token, 'kurap') || str_contains($token, 'panu') => 'fungal',
+                str_contains($token, 'eczema') || str_contains($token, 'dermatitis') || str_contains($token, 'eksim') => 'eczema',
+                str_contains($token, 'candid') => 'fold_fungal',
+                str_contains($token, 'urticaria') || str_contains($token, 'biduran') => 'urticaria',
+                str_contains($token, 'acne') || str_contains($token, 'jerawat') => 'acne',
+                str_contains($token, 'carcinoma') || str_contains($token, 'melanoma') || str_contains($token, 'keratosis') => 'suspicious_lesion',
+                default => null,
+            };
+        }
+
+        return collect($profiles)->filter()->unique()->values()->all();
+    }
+
+    /**
+     * @return array<string, array<string, float>>
+     */
+    private function profileSymptoms(): array
+    {
+        return [
+            'psoriasis' => [
+                'G03' => 3.4,
+                'DRY_SCALY_SKIN' => 3.2,
+                'G08' => 2.8,
+                'G01' => 2.4,
+                'RED_RASH' => 2.2,
+                'G16' => 2.0,
+                'RECURRENT_OR_DAYS' => 1.8,
+                'G19' => 1.5,
+                'G02' => 1.2,
+            ],
+            'fungal' => [
+                'G06' => 3.5,
+                'RING_SHAPED_EDGE' => 3.4,
+                'G07' => 3.0,
+                'G08' => 2.8,
+                'G19' => 2.3,
+                'G03' => 2.0,
+                'G02' => 1.8,
+            ],
+            'fold_fungal' => [
+                'MOIST_FOLD_RASH' => 3.4,
+                'G10' => 2.8,
+                'G14' => 2.0,
+                'ITCHING' => 1.8,
+                'RED_RASH' => 1.6,
+            ],
+            'eczema' => [
+                'CONTACT_TRIGGER' => 2.8,
+                'G13' => 2.8,
+                'G20' => 2.5,
+                'ITCHING' => 2.0,
+                'RED_RASH' => 1.8,
+                'DRY_SCALY_SKIN' => 1.7,
+                'VESICLES_OOZING' => 1.5,
+            ],
+            'urticaria' => [
+                'WHEALS_COME_GO' => 3.5,
+                'ITCHING' => 2.4,
+                'CONTACT_TRIGGER' => 1.8,
+                'RED_RASH' => 1.5,
+            ],
+            'acne' => [
+                'RED_RASH' => 1.8,
+                'BURNING_STINGING' => 1.4,
+                'RECURRENT_OR_DAYS' => 1.2,
+            ],
+            'suspicious_lesion' => [
+                'RECURRENT_OR_DAYS' => 2.2,
+                'G19' => 2.0,
+                'BURNING_STINGING' => 1.2,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $complaintFeatures
+     * @param  array<int, array<string, mixed>>  $visualCandidates
+     */
+    private function applyQuestionOverride(Symptom $symptom, array $complaintFeatures, array $visualCandidates): Symptom
+    {
+        $profile = $this->activeProfiles($complaintFeatures, $visualCandidates)[0] ?? null;
+        $question = $this->profileQuestionOverrides()[$profile][$symptom->code] ?? null;
+
+        if ($question) {
+            $symptom->setAttribute('question', $question);
+        }
+
+        return $symptom;
+    }
+
+    /**
+     * @return array<string, array<string, string>>
+     */
+    private function profileQuestionOverrides(): array
+    {
+        return [
+            'psoriasis' => [
+                'G03' => 'Apakah bercak tampak menebal dengan sisik putih atau keperakan, bukan hanya kering biasa?',
+                'DRY_SCALY_SKIN' => 'Apakah permukaan bercak terasa tebal, kasar, dan bersisik seperti plak?',
+                'G08' => 'Apakah pinggir bercak terlihat cukup jelas dibanding kulit sekitarnya?',
+                'G01' => 'Apakah dasar bercak tampak merah atau merah muda di bawah sisik?',
+                'RED_RASH' => 'Apakah area yang bersisik juga terlihat kemerahan?',
+                'G16' => 'Apakah keluhan berada di siku, lutut, kulit kepala, punggung, lengan, atau kaki?',
+                'RECURRENT_OR_DAYS' => 'Apakah bercak berlangsung berminggu-minggu, sering kambuh, atau makin menebal?',
+                'G19' => 'Apakah bercak bertambah luas perlahan dari waktu ke waktu?',
+                'G02' => 'Apakah bercak terasa gatal ringan sampai sedang, bukan nyeri hebat?',
+                'ITCHING' => 'Apakah bercak terasa gatal ringan sampai sedang?',
+            ],
+            'fungal' => [
+                'G06' => 'Apakah bentuk ruam cenderung melingkar seperti cincin?',
+                'RING_SHAPED_EDGE' => 'Apakah tepi ruam tampak lebih aktif/merah dibanding bagian tengahnya?',
+                'G07' => 'Apakah bagian tengah ruam tampak lebih bersih atau lebih normal dibanding tepinya?',
+                'G08' => 'Apakah batas tepi ruam terlihat jelas?',
+                'G19' => 'Apakah lingkar ruam bertambah lebar perlahan?',
+            ],
+            'eczema' => [
+                'G13' => 'Apakah keluhan muncul setelah memakai sabun, skincare, parfum, logam, tanaman, atau bahan tertentu?',
+                'CONTACT_TRIGGER' => 'Apakah ada bahan yang jelas menyentuh area itu sebelum ruam muncul?',
+                'G20' => 'Apakah ruam hanya muncul di area yang terkena bahan pemicu tersebut?',
+                'VESICLES_OOZING' => 'Apakah ada bintil kecil berair atau kulit tampak basah pada ruam?',
+            ],
+            'urticaria' => [
+                'WHEALS_COME_GO' => 'Apakah bentol muncul lalu hilang, atau berpindah tempat dalam beberapa jam?',
+                'ITCHING' => 'Apakah bentol terasa sangat gatal?',
+            ],
+        ];
     }
 
     /**

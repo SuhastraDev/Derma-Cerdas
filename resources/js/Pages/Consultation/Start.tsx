@@ -38,6 +38,7 @@ type StartProps = {
 
 type PrecheckResult = {
     selected_symptoms: Symptom[];
+    selected_red_flags: RedFlag[];
     complaint_summary: string[];
     detected_red_flags: string[];
     visual: {
@@ -379,6 +380,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
             }
 
             const selected = body.selected_symptoms?.length ? body.selected_symptoms : symptoms.slice(0, 8);
+            const selectedRiskQuestions = body.selected_red_flags?.length ? body.selected_red_flags : redFlags.slice(0, 6);
             setPrecheckResult(body);
             setAdaptiveSymptoms(selected);
             setAnsweredSymptoms(new Set());
@@ -387,7 +389,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
             // Tanda bahaya yang sudah jelas disebut di cerita keluhan diisi otomatis
             // (tetap boleh diubah); sisanya tetap wajib dijawab manual demi keamanan.
             const detectedCodes = new Set<string>(body.detected_red_flags ?? []);
-            const reordered = [...redFlags].sort((a, b) => {
+            const reordered = [...selectedRiskQuestions].sort((a, b) => {
                 const aDetected = detectedCodes.has(a.code) ? 0 : 1;
                 const bDetected = detectedCodes.has(b.code) ? 0 : 1;
                 return aDetected - bDetected;

@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Consultation;
+use App\Models\Disease;
 use App\Models\RedFlag;
 use App\Models\Symptom;
 use App\Services\AdaptiveQuestionService;
+use App\Services\AdaptiveRedFlagService;
 use App\Services\AiVisualService;
 use App\Services\CertaintyFactorService;
 use App\Services\ComplaintExtractionService;
@@ -64,7 +67,8 @@ class ConsultationController extends Controller
         ComplaintExtractionService $complaintExtractionService,
         CertaintyFactorService $certaintyFactorService,
         AiVisualService $aiVisualService,
-        AdaptiveQuestionService $adaptiveQuestionService
+        AdaptiveQuestionService $adaptiveQuestionService,
+        AdaptiveRedFlagService $adaptiveRedFlagService
     ): JsonResponse {
         $validated = $request->validate([
             'complaint_text' => ['required', 'string', 'min:12', 'max:1500'],
@@ -103,6 +107,16 @@ class ConsultationController extends Controller
             $validated['complaint_text'],
             RedFlag::query()->where('is_active', true)->get()
         );
+        $detectedRedFlagCodes = $keywordDetectedRedFlags
+            ->merge($aiDetectedRedFlags)
+            ->unique()
+            ->values()
+            ->all();
+        $selectedRedFlags = $adaptiveRedFlagService->selectRedFlags(
+            $complaintFeatures,
+            $visualAnalysis['candidates'] ?? [],
+            $detectedRedFlagCodes
+        );
 
         return response()->json([
             'selected_symptoms' => $selectedSymptoms->map(fn (Symptom $symptom): array => [
@@ -111,13 +125,16 @@ class ConsultationController extends Controller
                 'name' => $symptom->name,
                 'question' => $symptom->question,
             ])->values(),
+            'selected_red_flags' => $selectedRedFlags->map(fn (RedFlag $redFlag): array => [
+                'id' => $redFlag->id,
+                'code' => $redFlag->code,
+                'question' => $redFlag->question,
+                'severity' => $redFlag->severity,
+            ])->values(),
             'complaint_summary' => $complaintFeatures['summary'] ?? [],
             'disease_hints' => $complaintFeatures['disease_hints'] ?? [],
             'suggested_symptom_codes' => $visualAnalysis['suggested_symptom_codes'] ?? [],
-            'detected_red_flags' => $keywordDetectedRedFlags
-                ->merge($aiDetectedRedFlags)
-                ->unique()
-                ->values(),
+            'detected_red_flags' => $detectedRedFlagCodes,
             'visual' => [
                 'status' => $visualAnalysis['validation_status'],
                 'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
@@ -315,7 +332,7 @@ class ConsultationController extends Controller
 
     private function sessionCodeExists(string $sessionCode): bool
     {
-        return \App\Models\Consultation::query()
+        return Consultation::query()
             ->where('session_code', $sessionCode)
             ->exists();
     }
@@ -323,7 +340,7 @@ class ConsultationController extends Controller
     /**
      * @return array<int, array{class_name: string, file_name: string, url: string}>
      */
-    private function datasetComparisonImages(?\App\Models\Disease $disease): array
+    private function datasetComparisonImages(?Disease $disease): array
     {
         if (! $disease) {
             return [];

@@ -88,6 +88,7 @@ class ConsultationWorkflowService
                 $redFlagResult,
                 $visualAnalysis['validation_status'] === 'valid',
                 $complaintFeatures['disease_hints'] ?? [],
+                $normalizedSymptoms,
             );
 
             $consultation->update([
@@ -299,7 +300,8 @@ class ConsultationWorkflowService
         array $visualCandidates,
         array $redFlagResult,
         bool $hasValidatedVisual,
-        array $diseaseHints = []
+        array $diseaseHints = [],
+        array $normalizedSymptoms = []
     ): ConsultationFinalResult {
         if (! $textualRankings) {
             /** @var Disease $fallbackDisease */
@@ -324,6 +326,8 @@ class ConsultationWorkflowService
         // gejala nyaris tidak berbukti apa pun. Tampilkan temuan visual itu langsung
         // (edukasi/rujuk) alih-alih dipaksakan ke Pt yang tidak relevan. Tanda bahaya
         // tetap didahulukan lewat decide() normal (F07 menggantikan semua aturan lain).
+        $hintedDisease = $this->hintedNonSelfCareDisease($diseaseHints);
+
         if (
             ! $hasRedFlags
             && $visualDisease
@@ -342,6 +346,17 @@ class ConsultationWorkflowService
         ) {
             $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);
             $finalDisease = $visualDisease;
+        } elseif (
+            ! $hasRedFlags
+            && $hintedDisease
+            && (! $visualDisease || $visualScore < 0.55)
+            && $this->symptomsSupportHint($hintedDisease, $normalizedSymptoms)
+        ) {
+            $decision = $this->fusionDecisionService->decideContextSymptomAligned(
+                $hintedDisease,
+                $this->hintSupportScore($hintedDisease, $normalizedSymptoms)
+            );
+            $finalDisease = $hintedDisease;
         } else {
             $decision = $this->fusionDecisionService->decide(
                 textualDisease: $textualDisease,
@@ -386,6 +401,94 @@ class ConsultationWorkflowService
             ->pluck('dataset_class_name');
 
         return $visualClasses->intersect($hintClasses)->isNotEmpty();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $diseaseHints
+     */
+    private function hintedNonSelfCareDisease(array $diseaseHints): ?Disease
+    {
+        foreach ($diseaseHints as $hint) {
+            if (! is_array($hint) || ! is_string($hint['disease_code'] ?? null)) {
+                continue;
+            }
+
+            $disease = Disease::query()
+                ->where('code', $hint['disease_code'])
+                ->whereIn('default_action', ['educate_only', 'refer'])
+                ->first();
+
+            if ($disease) {
+                return $disease;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, float>  $normalizedSymptoms
+     */
+    private function symptomsSupportHint(Disease $disease, array $normalizedSymptoms): bool
+    {
+        return $this->hintSupportScore($disease, $normalizedSymptoms) >= 0.45;
+    }
+
+    /**
+     * @param  array<string, float>  $normalizedSymptoms
+     */
+    private function hintSupportScore(Disease $disease, array $normalizedSymptoms): float
+    {
+        $profileCodes = $this->hintProfileSymptomCodes($disease);
+
+        if ($profileCodes === []) {
+            return 0.0;
+        }
+
+        $totalWeight = array_sum($profileCodes);
+        $matchedWeight = 0.0;
+
+        foreach ($profileCodes as $code => $weight) {
+            $value = (float) ($normalizedSymptoms[$code] ?? 0.0);
+
+            if ($value > 0.0) {
+                $matchedWeight += $weight * min(1.0, $value);
+            }
+        }
+
+        return round($matchedWeight / max(0.1, $totalWeight), 4);
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private function hintProfileSymptomCodes(Disease $disease): array
+    {
+        $tokens = collect([
+            $disease->code,
+            $disease->name,
+            $disease->name_indonesian,
+            ...$disease->loadMissing('datasetMappings')->datasetMappings->pluck('dataset_class_name')->all(),
+        ])
+            ->filter(fn ($token): bool => is_string($token) && trim($token) !== '')
+            ->map(fn (string $token): string => str($token)->lower()->replace(['_', '-'], ' ')->value());
+
+        if ($tokens->contains(fn (string $token): bool => str_contains($token, 'psoriasis'))) {
+            return [
+                'G03' => 1.0,
+                'DRY_SCALY_SKIN' => 1.0,
+                'G08' => 0.8,
+                'G01' => 0.6,
+                'RED_RASH' => 0.6,
+                'G16' => 0.5,
+                'RECURRENT_OR_DAYS' => 0.5,
+                'G19' => 0.4,
+                'G02' => 0.3,
+                'ITCHING' => 0.3,
+            ];
+        }
+
+        return [];
     }
 
     /**

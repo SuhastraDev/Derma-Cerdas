@@ -282,6 +282,38 @@ class FusionDecisionService
         ];
     }
 
+    /**
+     * F10: the user's free-text context names a non-self-care disease and the
+     * answered symptom profile supports that context, while visual evidence is
+     * unavailable or too weak. This prevents broad symptoms such as "scaly" and
+     * "itchy" from being forced into a generic OTC class.
+     */
+    public function decideContextSymptomAligned(Disease $disease, float $supportScore): array
+    {
+        $supportScore = $this->clamp($supportScore);
+        $action = $disease->default_action === 'refer' ? 'refer' : 'educate_only';
+        $diseaseName = $disease->name_indonesian ?: $disease->name;
+
+        return [
+            'disease' => $disease,
+            'visual_score' => 0.0,
+            'textual_cf' => $supportScore,
+            'fusion_score' => $supportScore,
+            'fusion_score_percent' => $this->round($supportScore * 100),
+            'fusion_rule_code' => 'F10',
+            'action' => $action,
+            'can_recommend_medicine' => false,
+            'explanation' => sprintf(
+                'Aturan F10: pengguna menyebut %s sebagai konteks dan jawaban gejala cukup selaras (dukungan %.1f%%), sementara kandidat visual belum cukup kuat. Hasil ditampilkan sebagai edukasi awal, bukan diagnosis, dan tidak disertai rekomendasi obat.%s',
+                $diseaseName,
+                $supportScore * 100,
+                $action === 'refer'
+                    ? ' Pengguna diarahkan untuk diperiksa tenaga kesehatan.'
+                    : ' Konsultasi tenaga kesehatan tetap diperlukan untuk kepastian.'
+            ),
+        ];
+    }
+
     private function enforceDiseaseScope(Disease $disease, string $action): string
     {
         return match ($disease->default_action) {

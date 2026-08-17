@@ -15,7 +15,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $disease = $this->createDisease('TINEA_PEDIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $disease,
             textualCf: 0.70,
             visualDisease: $disease,
@@ -33,7 +33,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $disease = $this->createDisease('TINEA_CRURIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $disease,
             textualCf: 0.50,
             visualDisease: $disease,
@@ -51,7 +51,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $disease = $this->createDisease('TINEA_VERSICOLOR');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $disease,
             textualCf: 0.30,
             visualDisease: $disease,
@@ -70,7 +70,7 @@ class FusionDecisionServiceTest extends TestCase
         $textualDisease = $this->createDisease('TINEA_CORPORIS');
         $visualDisease = $this->createDisease('ALLERGIC_CONTACT_DERMATITIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $textualDisease,
             textualCf: 0.80,
             visualDisease: $visualDisease,
@@ -90,7 +90,7 @@ class FusionDecisionServiceTest extends TestCase
         $textualDisease = $this->createDisease('TINEA_CORPORIS');
         $visualDisease = $this->createDisease('ALLERGIC_CONTACT_DERMATITIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $textualDisease,
             textualCf: 0.30,
             visualDisease: $visualDisease,
@@ -108,7 +108,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $disease = $this->createDisease('TINEA_PEDIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $disease,
             textualCf: 0.70,
             visualDisease: null,
@@ -126,7 +126,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $disease = $this->createDisease('TINEA_PEDIS');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $disease,
             textualCf: 0.95,
             visualDisease: $disease,
@@ -145,8 +145,8 @@ class FusionDecisionServiceTest extends TestCase
         $refer = $this->createDisease('SKIN_CANCER_REFER', 'refer');
         $educate = $this->createDisease('BENIGN_LESION', 'educate_only');
 
-        $referResult = (new FusionDecisionService())->decideVisualOnly($refer, 0.8);
-        $educateResult = (new FusionDecisionService())->decideVisualOnly($educate, 0.7);
+        $referResult = (new FusionDecisionService)->decideVisualOnly($refer, 0.8);
+        $educateResult = (new FusionDecisionService)->decideVisualOnly($educate, 0.7);
 
         $this->assertSame('F08', $referResult['fusion_rule_code']);
         $this->assertSame('refer', $referResult['action']);
@@ -161,7 +161,7 @@ class FusionDecisionServiceTest extends TestCase
     {
         $psoriasis = $this->createDisease('PSORIASIS_PAPULOSQUAMOUS', 'educate_only');
 
-        $result = (new FusionDecisionService())->decide(
+        $result = (new FusionDecisionService)->decide(
             textualDisease: $psoriasis,
             textualCf: 0.90,
             visualDisease: $psoriasis,
@@ -180,12 +180,24 @@ class FusionDecisionServiceTest extends TestCase
     {
         $psoriasis = $this->createDisease('PSORIASIS_PAPULOSQUAMOUS', 'educate_only');
 
-        $result = (new FusionDecisionService())->decideContextAlignedVisual($psoriasis, 0.78);
+        $result = (new FusionDecisionService)->decideContextAlignedVisual($psoriasis, 0.78);
 
         $this->assertSame('F09', $result['fusion_rule_code']);
         $this->assertSame('educate_only', $result['action']);
         $this->assertFalse($result['can_recommend_medicine']);
         $this->assertStringContainsString('konteks', strtolower($result['explanation']));
+    }
+
+    public function test_context_symptom_aligned_hint_is_education_only(): void
+    {
+        $psoriasis = $this->createDisease('PSORIASIS_PAPULOSQUAMOUS', 'educate_only');
+
+        $result = (new FusionDecisionService)->decideContextSymptomAligned($psoriasis, 0.62);
+
+        $this->assertSame('F10', $result['fusion_rule_code']);
+        $this->assertSame('educate_only', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertStringContainsString('gejala cukup selaras', strtolower($result['explanation']));
     }
 
     private function createDisease(string $code, string $defaultAction = 'recommend_otc'): Disease
