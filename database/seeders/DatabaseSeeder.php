@@ -11,6 +11,7 @@ use App\Models\RedFlag;
 use App\Models\Setting;
 use App\Models\Symptom;
 use App\Models\User;
+use App\Support\DatasetDiseaseMapper;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -34,7 +35,59 @@ class DatabaseSeeder extends Seeder
 
         $naskahSymptoms = $this->seedNaskahSymptoms();
         $this->seedNaskahRules($diseases, $naskahSymptoms);
+        $this->retireLegacyMvpDiseases();
         $this->deactivateOrphanedSymptoms();
+    }
+
+    /**
+     * Lima penyakit MVP awal (Eczema, Acute_Eczema, Dry_Skin_Eczema, Urticaria,
+     * Candidiasis) berada di luar ruang lingkup naskah (P01-P05) dan nilai MB/MD
+     * warisannya tidak dapat ditelusuri ke sumber mana pun. Selama mereka masih
+     * memiliki aturan gejala, dua hal merusak hasil:
+     *
+     * 1. Mereka ikut dinilai pada rankDiseases() tanpa satu pun gejala wajib
+     *    (mb < 0,80), sehingga tidak pernah bisa di-nol-kan oleh
+     *    missing_required_symptoms. Sementara kelima penyakit naskah justru
+     *    memiliki 1-5 gejala wajib. Akibatnya Eczema hampir selalu menang hanya
+     *    dari "gatal" + "kemerahan" (CF 0,82), termasuk mengalahkan P01-P05.
+     * 2. Penjaga pada dataset:import-classes menganggap penyakit yang punya
+     *    aturan gejala sebagai "tervalidasi" dan tidak pernah melipat kelas
+     *    datasetnya ke grup klinis yang benar.
+     *
+     * Aturannya dicabut dan penyakitnya dinonaktifkan agar hanya P01-P05 yang
+     * memiliki basis pengetahuan gejala/CF, sesuai Subbab 3.2.3.4 naskah.
+     */
+    private function retireLegacyMvpDiseases(): void
+    {
+        $diseaseIds = Disease::query()
+            ->whereIn('code', ['ECZEMA', 'ACUTE_ECZEMA', 'DRY_SKIN_ECZEMA', 'URTICARIA', 'CANDIDIASIS'])
+            ->pluck('id');
+
+        if ($diseaseIds->isEmpty()) {
+            return;
+        }
+
+        DiseaseSymptomRule::query()->whereIn('disease_id', $diseaseIds)->delete();
+
+        // Kelas dataset milik penyakit yang dipensiunkan dialihkan ke grup klinis
+        // yang benar (mis. Eczema -> DERMATITIS_ECZEMA, educate_only), sama seperti
+        // yang dilakukan perintah dataset:import-classes. Tanpa ini mapping-nya
+        // menunjuk penyakit nonaktif dan kandidat visualnya hilang begitu saja.
+        DatasetClassMapping::query()
+            ->whereIn('disease_id', $diseaseIds)
+            ->get()
+            ->each(function (DatasetClassMapping $mapping): void {
+                $payload = DatasetDiseaseMapper::payloadFor($mapping->dataset_class_name);
+
+                $group = Disease::query()->firstOrNew(['code' => $payload['disease']['code']]);
+                $group->fill($payload['disease'])->save();
+
+                $mapping->fill($payload['mapping']);
+                $mapping->disease_id = $group->id;
+                $mapping->save();
+            });
+
+        Disease::query()->whereIn('id', $diseaseIds)->update(['is_active' => false]);
     }
 
     /**

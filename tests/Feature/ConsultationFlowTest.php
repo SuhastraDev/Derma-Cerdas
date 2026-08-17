@@ -480,6 +480,109 @@ class ConsultationFlowTest extends TestCase
         });
     }
 
+    /**
+     * Regresi dari sesi produksi DC-20260817-144600-BZ0GW: keluhan "bercak merah
+     * tebal bersisik putih, sudah berminggu-minggu" membuat sistem mengisi
+     * sendiri RED_RASH, DRY_SCALY_SKIN, dan WHITE_BROWN_PATCHES lewat max(),
+     * menghasilkan DRY_SKIN_ECZEMA dengan CF 0,85 padahal pengguna tidak memilih
+     * satu pun gejala. Teks keluhan tidak boleh lagi menjadi nilai gejala.
+     */
+    public function test_complaint_text_never_fills_in_symptom_values(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Tanpa Jawaban',
+            'complaint_text' => 'bercak merah tebal bersisik putih, sudah berminggu-minggu',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame(0.0, (float) $finalResult->textual_cf);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+
+        $consultation = Consultation::query()->firstOrFail();
+        $this->assertSame(
+            0,
+            $consultation->symptoms()->where('user_cf', '>', 0)->count(),
+            'Tidak satu pun gejala boleh bernilai > 0 tanpa jawaban pengguna.'
+        );
+    }
+
+    /**
+     * Regresi kasus nyata: pengguna hanya mengunggah foto psoriasis tanpa
+     * menyebut nama penyakitnya, lalu menjawab gejala umum (gatal, kemerahan).
+     *
+     * Sebelum perbaikan, Eczema menang di jalur gejala dengan CF 0,82 dan hasil
+     * visual psoriasis dibuang, sehingga sistem menampilkan "Eksim" beserta
+     * rekomendasi obat. Aturan F09 tidak menolong karena mensyaratkan pengguna
+     * mengetik nama penyakitnya.
+     */
+    public function test_visual_psoriasis_is_not_masked_by_generic_symptom_answers(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $psoriasis = $this->createPsoriasisDisease();
+
+        $this->mock(AiVisualService::class, function ($mock) use ($psoriasis): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [[
+                        'disease' => $psoriasis,
+                        'provider' => 'dermacerdas_ai',
+                        'visual_score' => 0.72,
+                        'visual_reason' => 'Plak tebal bersisik tebal keperakan.',
+                        'raw_response' => ['dataset_class_name' => 'Psoriasis'],
+                    ]],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Foto Saja',
+            // Sengaja tidak menyebut nama penyakit apa pun.
+            'complaint_text' => 'Kulit saya gatal dan kemerahan di bagian lengan.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms(['G01' => 1.0, 'G02' => 1.0]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame($psoriasis->id, $finalResult->disease_id);
+        $this->assertSame('F08', $finalResult->fusion_rule_code);
+        $this->assertSame('educate_only', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+    }
+
     private function createPsoriasisDisease(): Disease
     {
         $psoriasis = Disease::query()->create([

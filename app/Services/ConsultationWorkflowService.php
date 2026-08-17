@@ -18,6 +18,9 @@ use Illuminate\Validation\ValidationException;
 
 class ConsultationWorkflowService
 {
+    /** Ambang kandidat visual dianggap kuat sebelum boleh menggeser keputusan. */
+    private const VISUAL_STRONG = 0.55;
+
     public function __construct(
         private readonly CertaintyFactorService $certaintyFactorService,
         private readonly RedFlagService $redFlagService,
@@ -49,13 +52,15 @@ class ConsultationWorkflowService
                 ],
             ]);
 
-            $normalizedSymptoms = $this->applyComplaintSymptomEvidence(
-                $this->normalizeSymptomInputs($symptomInputs),
-                $complaintFeatures
-            );
+            // Teks keluhan TIDAK PERNAH mengisi nilai gejala. Ia hanya menentukan
+            // pertanyaan mana yang diajukan (AdaptiveQuestionService) dan disimpan
+            // sebagai ringkasan pada metadata. Prinsip yang sama seperti saran AI:
+            // boleh memilih pertanyaan, tidak boleh menjawabnya atas nama pengguna.
+            $normalizedSymptoms = $this->normalizeSymptomInputs($symptomInputs);
             $normalizedRedFlags = $this->applyComplaintRedFlagEvidence(
                 $this->normalizeRedFlagInputs($redFlagInputs),
-                $complaintFeatures
+                $complaintFeatures,
+                $this->answeredRedFlagCodes($redFlagInputs)
             );
 
             $this->storeSymptoms($consultation, $normalizedSymptoms);
@@ -194,32 +199,47 @@ class ConsultationWorkflowService
     }
 
     /**
-     * @param  array<string, float>  $symptoms
-     * @param  array<string, mixed>  $complaintFeatures
-     * @return array<string, float>
+     * Kode tanda bahaya yang benar-benar ditanyakan dan dijawab pengguna.
+     *
+     * Kuncinya keberadaan key, bukan nilainya: "Tidak" dan "tidak ditanyakan"
+     * sama-sama bernilai false, tetapi hanya yang pertama merupakan pernyataan
+     * pengguna yang harus dihormati.
+     *
+     * @param  array<int|string, bool|int|string>  $inputs
+     * @return array<int, string>
      */
-    private function applyComplaintSymptomEvidence(array $symptoms, array $complaintFeatures): array
+    private function answeredRedFlagCodes(array $inputs): array
     {
-        foreach (($complaintFeatures['symptom_evidence'] ?? []) as $code => $evidence) {
-            if (! array_key_exists($code, $symptoms)) {
-                continue;
-            }
-
-            $symptoms[$code] = max((float) $symptoms[$code], (float) ($evidence['score'] ?? 0.0));
-        }
-
-        return $symptoms;
+        return RedFlag::query()
+            ->where('is_active', true)
+            ->pluck('code', 'id')
+            ->filter(fn (string $code, int $id): bool => array_key_exists($id, $inputs)
+                || array_key_exists((string) $id, $inputs)
+                || array_key_exists($code, $inputs))
+            ->values()
+            ->all();
     }
 
     /**
+     * Tanda bahaya yang terdeteksi dari teks keluhan tetap dipakai sebagai
+     * jaring pengaman, TETAPI hanya untuk pertanyaan yang tidak sempat
+     * ditanyakan. Bila pengguna sudah menjawab suatu tanda bahaya, jawabannya
+     * menang mutlak - sebelumnya operator || membuat jawaban "Tidak" tidak
+     * pernah bisa membatalkan deteksi kata kunci, sehingga F07 menahan seluruh
+     * hasil tanpa bisa dibantah.
+     *
      * @param  array<string, bool>  $redFlags
      * @param  array<string, mixed>  $complaintFeatures
+     * @param  array<int, string>  $answeredCodes
      * @return array<string, bool>
      */
-    private function applyComplaintRedFlagEvidence(array $redFlags, array $complaintFeatures): array
-    {
+    private function applyComplaintRedFlagEvidence(
+        array $redFlags,
+        array $complaintFeatures,
+        array $answeredCodes
+    ): array {
         foreach (($complaintFeatures['red_flag_evidence'] ?? []) as $code => $evidence) {
-            if (! array_key_exists($code, $redFlags)) {
+            if (! array_key_exists($code, $redFlags) || in_array($code, $answeredCodes, true)) {
                 continue;
             }
 
@@ -331,7 +351,7 @@ class ConsultationWorkflowService
         if (
             ! $hasRedFlags
             && $visualDisease
-            && $visualScore >= 0.55
+            && $visualScore >= self::VISUAL_STRONG
             && $this->visualMatchesDiseaseHint($visualDisease, $diseaseHints)
             && in_array($visualDisease->default_action, ['educate_only', 'refer'], true)
         ) {
@@ -339,17 +359,14 @@ class ConsultationWorkflowService
             $finalDisease = $visualDisease;
         } elseif (
             ! $hasRedFlags
-            && $visualDisease
-            && $visualScore >= 0.55
-            && $textualCf < 0.10
-            && ! $visualDisease->symptomRules()->exists()
+            && $this->visualFindingMustNotBeMasked($visualDisease, $visualScore, $textualDisease, $textualCf)
         ) {
             $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);
             $finalDisease = $visualDisease;
         } elseif (
             ! $hasRedFlags
             && $hintedDisease
-            && (! $visualDisease || $visualScore < 0.55)
+            && (! $visualDisease || $visualScore < self::VISUAL_STRONG)
             && $this->symptomsSupportHint($hintedDisease, $normalizedSymptoms)
         ) {
             $decision = $this->fusionDecisionService->decideContextSymptomAligned(
@@ -380,6 +397,42 @@ class ConsultationWorkflowService
             'explanation' => $decision['explanation'],
             'recommendations_snapshot' => $this->recommendationsSnapshot($finalDisease, $decision['can_recommend_medicine']),
         ]);
+    }
+
+    /**
+     * F08: temuan visual yang kuat tidak boleh ditimpa diam-diam oleh kandidat
+     * gejala (Pt) yang berbeda.
+     *
+     * Sebelumnya syaratnya CFt < 0,10, sehingga Pt sekecil apa pun di atas itu
+     * sudah cukup membuang hasil visual. Akibatnya foto psoriasis, lesi
+     * mencurigakan, atau infeksi bakteri tetap dilaporkan sebagai penyakit
+     * swamedikasi. Syaratnya sekarang:
+     *
+     * - Pv kuat (>= VISUAL_STRONG) dan berbeda dari Pt;
+     * - Pv belum punya basis pengetahuan gejala/CF tervalidasi, sehingga
+     *   jalur Certainty Factor memang tidak pernah bisa membenarkannya; dan
+     * - Pv bergolongan rujuk (kanker, autoimun, infeksi bakteri) sehingga
+     *   keselamatan didahulukan berapa pun CFt, ATAU CFt sendiri belum
+     *   mencapai batas "cukup yakin" (Tabel 3.10).
+     *
+     * Hasilnya tidak pernah berupa rekomendasi obat, hanya edukasi atau rujukan.
+     */
+    private function visualFindingMustNotBeMasked(
+        ?Disease $visualDisease,
+        float $visualScore,
+        Disease $textualDisease,
+        float $textualCf
+    ): bool {
+        if (! $visualDisease || $visualScore < self::VISUAL_STRONG) {
+            return false;
+        }
+
+        if ($visualDisease->is($textualDisease) || $visualDisease->symptomRules()->exists()) {
+            return false;
+        }
+
+        return $visualDisease->default_action === 'refer'
+            || $textualCf < FusionDecisionService::HIGH_CF;
     }
 
     /**
@@ -473,18 +526,18 @@ class ConsultationWorkflowService
             ->filter(fn ($token): bool => is_string($token) && trim($token) !== '')
             ->map(fn (string $token): string => str($token)->lower()->replace(['_', '-'], ' ')->value());
 
+        // CATATAN: profil ini masih dikeraskan khusus psoriasis dan perlu diganti
+        // mekanisme umum. Kode gejala warisan (DRY_SCALY_SKIN, RED_RASH, ITCHING)
+        // sudah dibuang karena gejalanya tidak lagi aktif, sehingga bobotnya hanya
+        // memperbesar penyebut tanpa pernah bisa terpenuhi.
         if ($tokens->contains(fn (string $token): bool => str_contains($token, 'psoriasis'))) {
             return [
                 'G03' => 1.0,
-                'DRY_SCALY_SKIN' => 1.0,
                 'G08' => 0.8,
                 'G01' => 0.6,
-                'RED_RASH' => 0.6,
                 'G16' => 0.5,
-                'RECURRENT_OR_DAYS' => 0.5,
                 'G19' => 0.4,
                 'G02' => 0.3,
-                'ITCHING' => 0.3,
             ];
         }
 

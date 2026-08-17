@@ -200,6 +200,49 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertStringContainsString('gejala cukup selaras', strtolower($result['explanation']));
     }
 
+    /**
+     * Regresi dari data produksi: sesi DC-20260817-144600-BZ0GW tercatat
+     * fusion_rule_code F07 (tanda bahaya) tetapi action-nya educate_only,
+     * karena enforceDiseaseScope() menimpa 'refer' mengikuti default_action
+     * penyakit. Rujukan tanda bahaya tidak boleh bisa diturunkan.
+     */
+    public function test_f07_red_flag_referral_is_not_downgraded_by_educate_only_disease(): void
+    {
+        $disease = $this->createDisease('DRY_SKIN_ECZEMA', 'educate_only');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $disease,
+            textualCf: 0.85,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => true],
+        );
+
+        $this->assertSame('F07', $result['fusion_rule_code']);
+        $this->assertSame('refer', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+    }
+
+    /** Safety-net F05 juga tidak boleh diturunkan menjadi educate_only. */
+    public function test_f05_safety_net_referral_is_not_downgraded(): void
+    {
+        $textual = $this->createDisease('DRY_SKIN_ECZEMA', 'educate_only');
+        $visual = $this->createDisease('TINEA_CORPORIS');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $textual,
+            textualCf: 0.45,
+            visualDisease: $visual,
+            visualScore: 0.70,
+            visualAvailable: true,
+            redFlagResult: ['has_red_flags' => false],
+        );
+
+        $this->assertSame('F05', $result['fusion_rule_code']);
+        $this->assertSame('refer', $result['action']);
+    }
+
     private function createDisease(string $code, string $defaultAction = 'recommend_otc'): Disease
     {
         return Disease::query()->firstOrCreate(

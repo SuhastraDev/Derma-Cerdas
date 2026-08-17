@@ -13,9 +13,11 @@ use App\Models\Disease;
  */
 class FusionDecisionService
 {
-    private const HIGH_CF = 0.60;
+    /** Batas "cukup yakin" pada skala Praditya dkk (2024), Tabel 3.10 naskah. */
+    public const HIGH_CF = 0.60;
 
-    private const MEDIUM_CF = 0.40;
+    /** Batas "sedikit yakin" pada skala yang sama. */
+    public const MEDIUM_CF = 0.40;
 
     /**
      * @param  Disease  $textualDisease  Pt: kandidat teks berkeyakinan tertinggi.
@@ -314,8 +316,20 @@ class FusionDecisionService
         ];
     }
 
+    /**
+     * Menyelaraskan aksi dengan golongan penyakit, TANPA pernah melemahkan rujukan.
+     *
+     * Sebelumnya penyakit bergolongan educate_only menimpa aksi 'refer' yang
+     * dihasilkan F07 (tanda bahaya) dan F05 (safety-net) menjadi 'educate_only',
+     * sehingga peringatan rujukan hilang diam-diam. Ini terjadi pada data
+     * produksi: sesi dengan fusion_rule_code F07 tercatat beraksi educate_only.
+     */
     private function enforceDiseaseScope(Disease $disease, string $action): string
     {
+        if ($action === 'refer') {
+            return 'refer';
+        }
+
         return match ($disease->default_action) {
             'refer' => 'refer',
             'educate_only' => 'educate_only',

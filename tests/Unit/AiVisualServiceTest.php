@@ -47,7 +47,9 @@ class AiVisualServiceTest extends TestCase
         $this->assertTrue($analysis['is_valid_skin_image']);
         $this->assertSame('valid', $analysis['validation_status']);
         $this->assertCount(1, $analysis['candidates']);
-        $this->assertTrue($analysis['candidates'][0]['disease']->is(Disease::query()->where('code', 'ECZEMA')->firstOrFail()));
+        // Penyakit MVP ECZEMA sudah dipensiunkan (lihat DatabaseSeeder::retireLegacyMvpDiseases),
+        // sehingga kelas dataset 'Eczema' kini menunjuk grup klinis DERMATITIS_ECZEMA.
+        $this->assertTrue($analysis['candidates'][0]['disease']->is(Disease::query()->where('code', 'DERMATITIS_ECZEMA')->firstOrFail()));
     }
 
     public function test_request_includes_linked_production_classes_outside_textual_top_eight(): void

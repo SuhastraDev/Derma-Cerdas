@@ -203,10 +203,16 @@ class AiVisualService
     {
         return collect($rawCandidates)
             ->map(function (array $candidate): ?array {
+                // Penyakit nonaktif (mis. penyakit MVP yang sudah dipensiunkan)
+                // tidak boleh menjadi kandidat visual Pv.
                 $disease = Disease::query()
-                    ->where('code', $candidate['local_disease_code'] ?? null)
-                    ->orWhereHas('datasetMappings', function ($query) use ($candidate): void {
-                        $query->where('dataset_class_name', $candidate['dataset_class_name'] ?? null);
+                    ->where('is_active', true)
+                    ->where(function ($query) use ($candidate): void {
+                        $query
+                            ->where('code', $candidate['local_disease_code'] ?? null)
+                            ->orWhereHas('datasetMappings', function ($mappingQuery) use ($candidate): void {
+                                $mappingQuery->where('dataset_class_name', $candidate['dataset_class_name'] ?? null);
+                            });
                     })
                     ->first();
 

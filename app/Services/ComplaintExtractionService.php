@@ -102,10 +102,13 @@ class ComplaintExtractionService
             'WHEALS_COME_GO' => [0.85, ['biduran', 'bentol', 'hilang timbul', 'muncul hilang', 'berpindah']],
             'RING_SHAPED_EDGE' => [0.85, ['melingkar', 'lingkar', 'cincin', 'tepi merah', 'kurap']],
             'MOIST_FOLD_RASH' => [0.75, ['lipatan', 'selangkangan', 'paha', 'ketiak', 'lembap', 'lembab']],
-            'FOOT_SCALING' => [0.85, ['kaki', 'sela jari', 'telapak', 'kutu air']],
-            'WHITE_BROWN_PATCHES' => [0.75, ['putih', 'cokelat', 'coklat', 'panu', 'bercak putih', 'bercak cokelat']],
-            'BURNING_STINGING' => [0.55, ['perih', 'panas', 'pedih', 'terbakar', 'menyengat']],
-            'RECURRENT_OR_DAYS' => [0.55, ['hari', 'minggu', 'bulan', 'sejak', 'kambuh', 'berulang', 'lama']],
+            // Istilah terlalu umum dibuang: "kaki" saja bukan bukti kutu air,
+            // "putih" bisa berarti warna kulit, "panas" lazimnya berarti demam,
+            // dan satuan waktu muncul di hampir semua keluhan.
+            'FOOT_SCALING' => [0.85, ['sela jari', 'telapak kaki', 'kutu air']],
+            'WHITE_BROWN_PATCHES' => [0.75, ['panu', 'bercak putih', 'bercak cokelat', 'bercak coklat']],
+            'BURNING_STINGING' => [0.55, ['perih', 'pedih', 'terbakar', 'menyengat']],
+            'RECURRENT_OR_DAYS' => [0.55, ['kambuh', 'berulang', 'berminggu', 'berbulan']],
 
             // Gejala G01-G20 sesuai Tabel 3.4 naskah skripsi (lima penyakit ruang lingkup).
             'G01' => [0.6, ['merah', 'kemerahan']],
@@ -121,7 +124,7 @@ class ComplaintExtractionService
             'G11' => [0.8, ['bercak putih', 'bercak cokelat', 'bercak coklat', 'panu']],
             'G12' => [0.6, ['gatal berkeringat', 'gatal saat keringat', 'gatal setelah keringat', 'bertambah setelah berkeringat']],
             'G13' => [0.7, ['kontak sabun', 'kontak kosmetik', 'kontak logam', 'kontak tanaman', 'setelah pakai', 'pemicu']],
-            'G14' => [0.5, ['perih', 'terbakar', 'panas']],
+            'G14' => [0.5, ['perih', 'terbakar', 'pedih', 'menyengat']],
             'G15' => [0.7, ['telapak kaki']],
             'G16' => [0.5, ['di badan', 'pada badan', 'di lengan', 'pada lengan']],
             'G17' => [0.4, ['nyeri ringan', 'sedikit nyeri']],
@@ -214,35 +217,56 @@ class ComplaintExtractionService
     private function matchedTerms(string $text, array $terms): array
     {
         return collect($terms)
-            ->filter(fn (string $term): bool => Str::contains($text, $term) && ! $this->isNegated($text, $term))
+            ->filter(fn (string $term): bool => $this->containsWord($text, $term) && ! $this->isNegated($text, $term))
             ->values()
             ->all();
     }
 
+    /**
+     * Pencocokan pada batas kata, bukan substring mentah.
+     *
+     * Str::contains() menimbulkan salah deteksi yang terbukti pada data produksi:
+     * "berkeringat" mengandung "kering" sehingga memicu kulit kering, dan
+     * "kulit putih" memicu bercak putih/panu. Imbuhan Indonesia yang lazim
+     * (ber-, me-, -nya, -an) tetap dikenali agar "bersisik" cocok dengan "sisik".
+     */
+    private function containsWord(string $text, string $term): bool
+    {
+        return preg_match($this->wordPattern($term), $text) === 1;
+    }
+
+    private function wordPattern(string $term): string
+    {
+        $escaped = preg_quote($term, '/');
+
+        return '/(?<![a-z])(?:ber|be|me|meng|men|ter|di|ke)?'.$escaped.'(?:nya|an|kan)?(?![a-z])/';
+    }
+
     private function isNegated(string $text, string $term): bool
     {
-        $position = strpos($text, $term);
+        // Diperiksa pada setiap kemunculan, bukan hanya yang pertama. Kalimat
+        // "awalnya tidak gatal, sekarang gatal sekali" sebelumnya dianggap
+        // tidak gatal karena kemunculan pertamanya dinegasikan.
+        if (preg_match_all($this->wordPattern($term), $text, $matches, PREG_OFFSET_CAPTURE) === false) {
+            return false;
+        }
 
-        if ($position !== false) {
+        $occurrences = $matches[0] ?? [];
+
+        if ($occurrences === []) {
+            return false;
+        }
+
+        foreach ($occurrences as [$matchedText, $position]) {
             $windowStart = max(0, $position - 24);
             $beforeTerm = substr($text, $windowStart, $position - $windowStart);
 
-            if (preg_match('/\b(tidak|tanpa|bukan|belum|gak|ga|nggak)\b/', $beforeTerm)) {
-                return true;
+            if (! preg_match('/\b(tidak|tanpa|bukan|belum|gak|ga|nggak)\b[^.,;]*$/', $beforeTerm)) {
+                return false;
             }
         }
 
-        $patterns = [
-            'tidak '.$term,
-            'tanpa '.$term,
-            'bukan '.$term,
-            'belum '.$term,
-            'gak '.$term,
-            'ga '.$term,
-            'nggak '.$term,
-        ];
-
-        return collect($patterns)->contains(fn (string $pattern): bool => Str::contains($text, $pattern));
+        return true;
     }
 
     private function normalize(string $text): string
