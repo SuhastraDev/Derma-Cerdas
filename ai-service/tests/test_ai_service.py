@@ -136,6 +136,42 @@ def test_nvidia_response_recovers_python_style_json_after_model_reasoning() -> N
     assert payload["suggested_symptom_codes"] == ["G03", "G11"]
 
 
+def test_nvidia_completion_text_reads_reasoning_content_when_content_is_empty() -> None:
+    text = NvidiaVisualClient().completion_text(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "reasoning_content": '{"is_valid_skin_image": true, "candidates": [], "warnings": []}',
+                    }
+                }
+            ]
+        }
+    )
+
+    assert NvidiaVisualClient().parse_json_text(text)["is_valid_skin_image"] is True
+
+
+def test_nvidia_completion_text_flattens_content_blocks() -> None:
+    text = NvidiaVisualClient().completion_text(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": '{"is_valid_skin_image": true'},
+                            {"type": "text", "text": ', "candidates": [], "warnings": []}'},
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+
+    assert NvidiaVisualClient().parse_json_text(text)["is_valid_skin_image"] is True
+
+
 def test_visual_response_schema_restricts_local_classes_and_symptoms() -> None:
     response_format = NvidiaVisualClient().visual_response_format(
         ["Psoriasis", "Dry_Skin_Eczema"],

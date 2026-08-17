@@ -432,12 +432,51 @@ class NvidiaVisualClient:
         if not choices:
             return ""
 
-        content = choices[0].get("message", {}).get("content", "") or ""
+        message = choices[0].get("message", {})
 
+        if not isinstance(message, dict):
+            return ""
+
+        parts: list[str] = []
+        content = self.content_text(message.get("content"))
+
+        if content:
+            parts.append(content)
+
+        # Some NVIDIA responses expose the useful answer in a separate field
+        # while leaving message.content empty, especially for reasoning models.
+        for field in ("output_text", "reasoning_content", "text"):
+            alternate = self.content_text(message.get(field))
+
+            if alternate and alternate not in parts:
+                parts.append(alternate)
+
+        if parts:
+            return "\n".join(parts)
+
+        return json.dumps(message, ensure_ascii=False)
+
+    def content_text(self, content: Any) -> str:
         if isinstance(content, str):
             return content
 
-        return json.dumps(content, ensure_ascii=False)
+        if isinstance(content, dict):
+            for field in ("text", "content", "value"):
+                nested = self.content_text(content.get(field))
+
+                if nested:
+                    return nested
+
+            return ""
+
+        if isinstance(content, list):
+            return "\n".join(
+                nested
+                for item in content
+                if (nested := self.content_text(item))
+            )
+
+        return ""
 
     def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
         error = self.describe_http_error(exception)
