@@ -11,7 +11,7 @@ from app.schemas import AnalyzeImageRequest, ImageValidationResponse
 from app.services.analysis_service import VisualAnalysisService
 from app.services.class_mapping import allowed_candidate_classes
 from app.services.dataset_visual_index import DatasetVisualIndex
-from app.services.cerebras_service import CerebrasVisualClient, normalize_candidates
+from app.services.nvidia_service import NvidiaVisualClient, normalize_candidates
 
 
 client = TestClient(app)
@@ -54,18 +54,29 @@ def test_validate_image_rejects_invalid_base64() -> None:
 
 
 def test_analyze_image_mock_mode_does_not_claim_valid_skin_image() -> None:
-    response = client.post(
-        "/analyze-image",
-        json={
-            "consultation_id": "DC-TEST-001",
-            "image_base64": sample_image_base64(),
-            "candidate_classes": ["Tinea_Corporis", "Eczema"],
-        },
-    )
+    from app.config import settings
+
+    # Settings is a frozen dataclass; bypass __setattr__ directly since this
+    # test must force mock mode regardless of whatever real API key is
+    # configured in the local/CI .env.
+    original_mock_mode = settings.ai_mock_mode
+    object.__setattr__(settings, "ai_mock_mode", True)
+
+    try:
+        response = client.post(
+            "/analyze-image",
+            json={
+                "consultation_id": "DC-TEST-001",
+                "image_base64": sample_image_base64(),
+                "candidate_classes": ["Tinea_Corporis", "Eczema"],
+            },
+        )
+    finally:
+        object.__setattr__(settings, "ai_mock_mode", original_mock_mode)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["provider"] == "cerebras"
+    assert payload["provider"] == "nvidia"
     assert payload["is_valid_skin_image"] is False
     assert payload["candidates"] == []
     assert payload["warnings"]
@@ -92,16 +103,16 @@ def test_normalize_candidates_preserves_allowed_production_class_for_laravel_map
     assert candidates[1].local_disease_code == "URTICARIA"
 
 
-def test_cerebras_json_parser_handles_fenced_json() -> None:
-    parsed = CerebrasVisualClient().parse_json_text(
+def test_nvidia_json_parser_handles_fenced_json() -> None:
+    parsed = NvidiaVisualClient().parse_json_text(
         '```json\n{"is_valid_skin_image": true, "candidates": [], "warnings": []}\n```'
     )
 
     assert parsed["is_valid_skin_image"] is True
 
 
-def test_cerebras_response_treats_candidate_output_as_valid_skin_image() -> None:
-    payload = CerebrasVisualClient().response_from_text(
+def test_nvidia_response_treats_candidate_output_as_valid_skin_image() -> None:
+    payload = NvidiaVisualClient().response_from_text(
         '{"is_valid_skin_image": false, "candidates": ['
         '{"dataset_class_name": "Eczema", "visual_score": 0.42, "reason": "Area kulit tampak kemerahan"}'
         '], "warnings": ["Foto agak blur"]}'
@@ -111,8 +122,8 @@ def test_cerebras_response_treats_candidate_output_as_valid_skin_image() -> None
     assert payload["candidates"]
 
 
-def test_cerebras_response_treats_skin_evidence_as_valid_without_candidates() -> None:
-    payload = CerebrasVisualClient().response_from_text(
+def test_nvidia_response_treats_skin_evidence_as_valid_without_candidates() -> None:
+    payload = NvidiaVisualClient().response_from_text(
         '{"is_valid_skin_image": false, "skin_evidence_score": 0.72, '
         '"candidates": [], "warnings": ["Kulit terlihat, tetapi class tidak yakin"]}'
     )
@@ -122,7 +133,7 @@ def test_cerebras_response_treats_skin_evidence_as_valid_without_candidates() ->
 
 
 def test_skin_filter_response_treats_body_area_as_valid() -> None:
-    payload = CerebrasVisualClient().skin_filter_response_from_text(
+    payload = NvidiaVisualClient().skin_filter_response_from_text(
         '{"is_valid_skin_image": false, "skin_evidence_score": 0.81, "warnings": []}'
     )
 
@@ -130,7 +141,7 @@ def test_skin_filter_response_treats_body_area_as_valid() -> None:
 
 
 def test_skin_filter_response_accepts_non_json_human_skin_answer() -> None:
-    payload = CerebrasVisualClient().skin_filter_response_from_text(
+    payload = NvidiaVisualClient().skin_filter_response_from_text(
         "Ya, ini foto kulit manusia pada lengan dengan bercak putih seperti vitiligo."
     )
 
@@ -138,7 +149,7 @@ def test_skin_filter_response_accepts_non_json_human_skin_answer() -> None:
 
 
 def test_skin_filter_response_rejects_non_json_clear_non_skin_answer() -> None:
-    payload = CerebrasVisualClient().skin_filter_response_from_text(
+    payload = NvidiaVisualClient().skin_filter_response_from_text(
         "False. Gambar ini adalah dokumen di layar, bukan kulit manusia."
     )
 
@@ -146,7 +157,7 @@ def test_skin_filter_response_rejects_non_json_clear_non_skin_answer() -> None:
 
 
 def test_skin_filter_rejects_explicit_non_skin_json() -> None:
-    payload = CerebrasVisualClient().skin_filter_response_from_text(
+    payload = NvidiaVisualClient().skin_filter_response_from_text(
         '{"is_valid_skin_image": false, "skin_evidence_score": 0.02, '
         '"contains_human_body_part": false, "contains_visible_skin": false, '
         '"warnings": ["Objek adalah dokumen"]}'
@@ -156,7 +167,7 @@ def test_skin_filter_rejects_explicit_non_skin_json() -> None:
 
 
 def test_skin_filter_accepts_visible_skin_evidence_even_if_summary_flag_is_false() -> None:
-    payload = CerebrasVisualClient().skin_filter_response_from_text(
+    payload = NvidiaVisualClient().skin_filter_response_from_text(
         '{"is_valid_skin_image": false, "skin_evidence_score": 0.82, '
         '"contains_human_body_part": true, "contains_visible_skin": true, '
         '"warnings": ["Bercak putih terlihat pada lengan"]}'
@@ -201,7 +212,7 @@ def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
             return []
 
     class QuotaExhaustedClient:
-        provider = "cerebras"
+        provider = "nvidia"
 
         def __init__(self) -> None:
             self.skin_filter_calls = 0
@@ -211,7 +222,7 @@ def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
                 "provider_status": "quota_exceeded",
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Kuota/limit Cerebras API telah habis."],
+                "warnings": ["Kuota/limit NVIDIA NIM API telah habis."],
                 "raw_response": {"error_code": "quota_exceeded"},
             }
 
@@ -234,10 +245,10 @@ def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
     assert client_with_quota.skin_filter_calls == 0
 
 
-def test_cerebras_429_is_classified_as_quota_exhausted() -> None:
-    response = CerebrasVisualClient().provider_error_response(
+def test_nvidia_429_is_classified_as_quota_exhausted() -> None:
+    response = NvidiaVisualClient().provider_error_response(
         RuntimeError("429 rate_limit_exceeded: rate limit reached"),
-        "Cerebras API",
+        "NVIDIA NIM API",
     )
 
     assert response["provider_status"] == "quota_exceeded"
@@ -248,7 +259,7 @@ def test_cerebras_429_is_classified_as_quota_exhausted() -> None:
 def test_post_with_retry_recovers_from_a_transient_503(monkeypatch) -> None:
     import httpx
 
-    from app.services import cerebras_service as cerebras_service_module
+    from app.services import nvidia_service as nvidia_service_module
 
     calls: list[int] = []
 
@@ -272,10 +283,10 @@ def test_post_with_retry_recovers_from_a_transient_503(monkeypatch) -> None:
 
         return FakeResponse(200, {"choices": [{"message": {"content": "ok"}}]})
 
-    monkeypatch.setattr(cerebras_service_module.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(cerebras_service_module.httpx, "post", fake_post)
+    monkeypatch.setattr(nvidia_service_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(nvidia_service_module.httpx, "post", fake_post)
 
-    body = CerebrasVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
+    body = NvidiaVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
 
     assert len(calls) == 2
     assert body["choices"][0]["message"]["content"] == "ok"
@@ -284,7 +295,7 @@ def test_post_with_retry_recovers_from_a_transient_503(monkeypatch) -> None:
 def test_post_with_retry_gives_up_after_repeated_503(monkeypatch) -> None:
     import httpx
 
-    from app.services import cerebras_service as cerebras_service_module
+    from app.services import nvidia_service as nvidia_service_module
 
     calls: list[int] = []
 
@@ -302,11 +313,11 @@ def test_post_with_retry_gives_up_after_repeated_503(monkeypatch) -> None:
 
         return FakeResponse()
 
-    monkeypatch.setattr(cerebras_service_module.time, "sleep", lambda seconds: None)
-    monkeypatch.setattr(cerebras_service_module.httpx, "post", fake_post)
+    monkeypatch.setattr(nvidia_service_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(nvidia_service_module.httpx, "post", fake_post)
 
     try:
-        CerebrasVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
+        NvidiaVisualClient().post_with_retry({"model": "test"}, timeout=5.0)
         raised = False
     except httpx.HTTPStatusError:
         raised = True

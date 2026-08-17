@@ -173,12 +173,12 @@ class ConsultationFlowTest extends TestCase
             $mock->shouldReceive('analyze')
                 ->once()
                 ->andReturn([
-                    'provider' => 'cerebras',
+                    'provider' => 'nvidia',
                     'provider_status' => 'quota_exceeded',
                     'is_valid_skin_image' => null,
                     'validation_status' => 'unavailable',
                     'candidates' => [],
-                    'warnings' => ['Kuota/limit Cerebras API telah habis.'],
+                    'warnings' => ['Kuota/limit NVIDIA NIM API telah habis.'],
                     'raw_response' => ['error_code' => 'quota_exceeded'],
                 ]);
         });
@@ -191,7 +191,7 @@ class ConsultationFlowTest extends TestCase
             'symptoms' => $this->symptoms(['PATCHES' => 0.8]),
             'red_flags' => $this->redFlags([]),
         ])->assertSessionHasErrors([
-            'image' => 'Kuota/limit analisis visual Cerebras sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan limit aktif.',
+            'image' => 'Kuota/limit analisis visual NVIDIA NIM sedang habis. Tunggu hingga kuota tersedia kembali atau gunakan API key dengan limit aktif.',
         ]);
     }
 

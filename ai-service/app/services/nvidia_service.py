@@ -15,16 +15,16 @@ from app.schemas import VisualCandidate
 from app.services.class_mapping import allowed_candidate_classes, normalize_class_name, resolve_mapping
 from app.services.image_validation import ImageValidator
 
-CEREBRAS_CHAT_COMPLETIONS_URL = "https://api.cerebras.ai/v1/chat/completions"
+NVIDIA_CHAT_COMPLETIONS_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 # Vision token cost scales with image size. A skin lesion photo does not need
 # more than this to stay legible, and keeping requests smaller helps stay
-# comfortably inside Cerebras's per-minute token rate limit.
-CEREBRAS_MAX_IMAGE_DIMENSION = 768
+# comfortably inside NVIDIA NIM's rate limit.
+NVIDIA_MAX_IMAGE_DIMENSION = 768
 
 
-class CerebrasVisualClient:
-    provider = "cerebras"
+class NvidiaVisualClient:
+    provider = "nvidia"
 
     def analyze(
         self,
@@ -34,10 +34,10 @@ class CerebrasVisualClient:
     ) -> dict[str, Any]:
         classes = allowed_candidate_classes(candidate_classes)
 
-        if settings.ai_mock_mode or not settings.cerebras_api_key:
+        if settings.ai_mock_mode or not settings.nvidia_api_key:
             return self.mock_response(classes)
 
-        return self.cerebras_response(image_base64, classes, dataset_matches or [])
+        return self.nvidia_response(image_base64, classes, dataset_matches or [])
 
     def assess_red_flags(self, complaint_text: str, red_flags: list[dict[str, str]]) -> dict[str, Any]:
         """Text-only pass over the free-text complaint to flag danger signs the
@@ -47,7 +47,7 @@ class CerebrasVisualClient:
         if not red_flags:
             return {"provider_status": "ok", "detected_codes": [], "warnings": [], "raw_response": {}}
 
-        if settings.ai_mock_mode or not settings.cerebras_api_key:
+        if settings.ai_mock_mode or not settings.nvidia_api_key:
             return {
                 "provider_status": "mock_mode",
                 "detected_codes": [],
@@ -58,7 +58,7 @@ class CerebrasVisualClient:
         try:
             body = self.text_chat_completion(self.red_flag_prompt(complaint_text, red_flags))
         except Exception as exc:
-            return self.provider_error_response(exc, "Cerebras red flag assessment")
+            return self.provider_error_response(exc, "NVIDIA NIM red flag assessment")
 
         text = self.completion_text(body)
         parsed = self.parse_json_text(text)
@@ -72,7 +72,7 @@ class CerebrasVisualClient:
             "provider_status": "ok",
             "detected_codes": detected_codes,
             "warnings": parsed.get("warnings", []),
-            "raw_response": {"text": text, "model": settings.cerebras_model_name},
+            "raw_response": {"text": text, "model": settings.nvidia_model_name},
         }
 
     def red_flag_prompt(self, complaint_text: str, red_flags: list[dict[str, str]]) -> str:
@@ -96,7 +96,7 @@ class CerebrasVisualClient:
     def text_chat_completion(self, prompt: str) -> dict[str, Any]:
         return self.post_with_retry(
             {
-                "model": settings.cerebras_model_name,
+                "model": settings.nvidia_model_name,
                 "temperature": 0.1,
                 "messages": [{"role": "user", "content": prompt}],
             },
@@ -114,7 +114,7 @@ class CerebrasVisualClient:
             "raw_response": {"mode": "mock"},
         }
 
-    def cerebras_response(
+    def nvidia_response(
         self,
         image_base64: str,
         classes: list[str],
@@ -126,14 +126,14 @@ class CerebrasVisualClient:
         try:
             body = self.chat_completion(prompt, data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Cerebras API")
+            return self.provider_error_response(exc, "NVIDIA NIM API")
 
         text = self.completion_text(body)
 
         return self.response_from_text(text)
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
-        if settings.ai_mock_mode or not settings.cerebras_api_key:
+        if settings.ai_mock_mode or not settings.nvidia_api_key:
             return {
                 "provider_status": "mock_mode",
                 "is_valid_skin_image": False,
@@ -146,7 +146,7 @@ class CerebrasVisualClient:
         try:
             body = self.chat_completion(self.skin_filter_prompt(), data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Cerebras skin filter")
+            return self.provider_error_response(exc, "NVIDIA NIM skin filter")
 
         text = self.completion_text(body)
 
@@ -163,8 +163,8 @@ class CerebrasVisualClient:
             with Image.open(BytesIO(raw)) as image:
                 image = ImageOps.exif_transpose(image) or image
 
-                if max(image.size) > CEREBRAS_MAX_IMAGE_DIMENSION:
-                    image.thumbnail((CEREBRAS_MAX_IMAGE_DIMENSION, CEREBRAS_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
+                if max(image.size) > NVIDIA_MAX_IMAGE_DIMENSION:
+                    image.thumbnail((NVIDIA_MAX_IMAGE_DIMENSION, NVIDIA_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
 
                 buffer = BytesIO()
                 image.convert("RGB").save(buffer, format="JPEG", quality=85)
@@ -176,7 +176,7 @@ class CerebrasVisualClient:
     def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
         return self.post_with_retry(
             {
-                "model": settings.cerebras_model_name,
+                "model": settings.nvidia_model_name,
                 "temperature": 0.2,
                 "messages": [
                     {
@@ -192,7 +192,7 @@ class CerebrasVisualClient:
         )
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
-        """Retry once on Cerebras-side transient errors (rate limit / 5xx).
+        """Retry once on NVIDIA-side transient errors (rate limit / 5xx).
         Client errors (4xx other than 429) are not retried - retrying a
         malformed request just wastes token budget for the same failure. Kept
         to 2 attempts with a short per-attempt timeout so the combined wait
@@ -203,9 +203,9 @@ class CerebrasVisualClient:
 
         for attempt in range(1, attempts + 1):
             response = httpx.post(
-                CEREBRAS_CHAT_COMPLETIONS_URL,
+                NVIDIA_CHAT_COMPLETIONS_URL,
                 headers={
-                    "Authorization": f"Bearer {settings.cerebras_api_key}",
+                    "Authorization": f"Bearer {settings.nvidia_api_key}",
                     "Content-Type": "application/json",
                 },
                 json=json_body,
@@ -244,7 +244,7 @@ class CerebrasVisualClient:
         )
         provider_status = "quota_exceeded" if quota_exceeded else "unavailable"
         warning = (
-            "Kuota/limit Cerebras API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan limit aktif."
+            "Kuota/limit NVIDIA NIM API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan limit aktif."
             if quota_exceeded
             else f"{operation} sedang tidak tersedia. Coba kembali beberapa saat lagi."
         )
@@ -257,7 +257,7 @@ class CerebrasVisualClient:
             "raw_response": {
                 "error": error,
                 "error_code": provider_status,
-                "model": settings.cerebras_model_name,
+                "model": settings.nvidia_model_name,
             },
         }
 
@@ -287,7 +287,7 @@ class CerebrasVisualClient:
             "warnings": parsed.get("warnings", []),
             "raw_response": {
                 "text": text,
-                "model": settings.cerebras_model_name,
+                "model": settings.nvidia_model_name,
                 "skin_evidence_score": skin_evidence_score,
             },
         }
@@ -357,7 +357,7 @@ class CerebrasVisualClient:
     def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
         parse_failed = any(
-            warning.startswith("Respons Cerebras")
+            warning.startswith("Respons NVIDIA")
             for warning in parsed.get("warnings", [])
         )
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
@@ -375,7 +375,7 @@ class CerebrasVisualClient:
         warnings = parsed.get("warnings", [])
 
         if parse_failed and text_signal is not None:
-            warnings = ["Respons Cerebras skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
+            warnings = ["Respons NVIDIA NIM skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
 
         return {
             "provider_status": "ok",
@@ -383,7 +383,7 @@ class CerebrasVisualClient:
             "warnings": warnings,
             "raw_response": {
                 "text": text,
-                "model": settings.cerebras_model_name,
+                "model": settings.nvidia_model_name,
                 "skin_evidence_score": skin_evidence_score,
                 "contains_human_body_part": parsed.get("contains_human_body_part"),
                 "contains_visible_skin": parsed.get("contains_visible_skin"),
@@ -459,14 +459,14 @@ class CerebrasVisualClient:
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Cerebras tidak berbentuk JSON valid."],
+                "warnings": ["Respons NVIDIA NIM tidak berbentuk JSON valid."],
             }
 
         if not isinstance(data, dict):
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Cerebras tidak sesuai struktur yang diminta."],
+                "warnings": ["Respons NVIDIA NIM tidak sesuai struktur yang diminta."],
             }
 
         return data
@@ -543,7 +543,7 @@ def normalize_candidates(
                 dataset_class_name=mapping.dataset_class_name if mapping else canonical_name,
                 local_disease_code=mapping.local_disease_code if mapping else None,
                 visual_score=round(score, 4),
-                reason=str(raw.get("reason") or "Kandidat visual dari Cerebras."),
+                reason=str(raw.get("reason") or "Kandidat visual dari NVIDIA NIM."),
             )
         )
 

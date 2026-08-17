@@ -38,8 +38,8 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "DermaCerdas AI Service")
     app_env: str = os.getenv("APP_ENV", "local")
     ai_mock_mode: bool = os.getenv("AI_MOCK_MODE", "true").lower() in {"1", "true", "yes", "on"}
-    cerebras_api_key: str | None = os.getenv("CEREBRAS_API_KEY") or None
-    cerebras_model_name: str = os.getenv("CEREBRAS_MODEL_NAME", "gemma-4-31b")
+    nvidia_api_key: str | None = os.getenv("NVIDIA_API_KEY") or None
+    nvidia_model_name: str = os.getenv("NVIDIA_MODEL_NAME", "meta/llama-3.2-11b-vision-instruct")
     max_image_size_mb: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "5"))
     allowed_image_mime_types: tuple[str, ...] = tuple(
         item.strip()

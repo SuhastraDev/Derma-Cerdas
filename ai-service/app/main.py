@@ -13,7 +13,7 @@ from app.schemas import (
 )
 from app.services.analysis_service import VisualAnalysisService
 from app.services.dataset_visual_index import DatasetVisualIndex
-from app.services.cerebras_service import CerebrasVisualClient
+from app.services.nvidia_service import NvidiaVisualClient
 from app.services.image_validation import ImageValidationError, ImageValidator
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -52,13 +52,13 @@ def analyze_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
     if not validation.is_valid:
         raise HTTPException(status_code=422, detail="Gambar tidak valid untuk dianalisis.")
 
-    service = VisualAnalysisService(CerebrasVisualClient())
+    service = VisualAnalysisService(NvidiaVisualClient())
     return service.analyze(payload, validation)
 
 
 @app.post("/assess-red-flags", response_model=AssessRedFlagsResponse)
 def assess_red_flags(payload: AssessRedFlagsRequest) -> AssessRedFlagsResponse:
-    result = CerebrasVisualClient().assess_red_flags(
+    result = NvidiaVisualClient().assess_red_flags(
         payload.complaint_text,
         [red_flag.model_dump() for red_flag in payload.red_flags],
     )

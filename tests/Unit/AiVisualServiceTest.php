@@ -24,7 +24,7 @@ class AiVisualServiceTest extends TestCase
 
         Http::fake([
             'dermacerdas-ai.test/analyze-image' => Http::response([
-                'provider' => 'cerebras',
+                'provider' => 'nvidia',
                 'is_valid_skin_image' => false,
                 'candidates' => [
                     [
@@ -34,7 +34,7 @@ class AiVisualServiceTest extends TestCase
                     ],
                 ],
                 'warnings' => ['Foto agak buram.'],
-                'raw_response' => ['model' => 'cerebras-test'],
+                'raw_response' => ['model' => 'nvidia-test'],
             ]),
         ]);
 
@@ -71,7 +71,7 @@ class AiVisualServiceTest extends TestCase
             $this->assertContains('Basal_Cell_Carcinoma', $request['candidate_classes']);
 
             return Http::response([
-                'provider' => 'cerebras',
+                'provider' => 'nvidia',
                 'is_valid_skin_image' => true,
                 'candidates' => [],
                 'warnings' => [],
@@ -93,11 +93,11 @@ class AiVisualServiceTest extends TestCase
 
         Http::fake([
             'dermacerdas-ai.test/analyze-image' => Http::response([
-                'provider' => 'cerebras',
+                'provider' => 'nvidia',
                 'provider_status' => 'quota_exceeded',
                 'is_valid_skin_image' => false,
                 'candidates' => [],
-                'warnings' => ['Kuota/limit Cerebras API telah habis.'],
+                'warnings' => ['Kuota/limit NVIDIA NIM API telah habis.'],
                 'raw_response' => ['error_code' => 'quota_exceeded'],
             ]),
         ]);
