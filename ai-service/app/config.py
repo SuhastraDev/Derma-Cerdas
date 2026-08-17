@@ -43,6 +43,8 @@ class Settings:
     nvidia_model_name: str = os.getenv("NVIDIA_MODEL_NAME", "meta/llama-3.2-11b-vision-instruct")
     groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
     groq_model_name: str = os.getenv("GROQ_MODEL_NAME", "qwen/qwen3.6-27b")
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
+    gemini_model_name: str = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-flash")
     max_image_size_mb: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "5"))
     allowed_image_mime_types: tuple[str, ...] = tuple(
         item.strip()
