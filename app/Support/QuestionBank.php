@@ -172,6 +172,18 @@ class QuestionBank
                     'P7_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
                 ],
             ],
+            'P9_USIA' => [
+                'order' => 9,
+                'always' => false,
+                'text' => 'Berapa usia orang yang mengalami keluhan ini?',
+                'options' => [
+                    'P9_ANAK' => ['Anak (di bawah 12 tahun)', 'Beberapa kondisi kulit hampir khas usia anak'],
+                    'P9_REMAJA' => ['Remaja (12-18 tahun)', 'Perubahan hormon memengaruhi kelenjar minyak'],
+                    'P9_DEWASA' => ['Dewasa (19-50 tahun)', ''],
+                    'P9_LANSIA' => ['Di atas 50 tahun', 'Paparan matahari bertahun-tahun mulai berdampak'],
+                    'P9_TIDAKYAKIN' => ['Tidak ingin menyebutkan', 'Lewati bila tidak nyaman'],
+                ],
+            ],
             'P8_CIRI' => [
                 'order' => 8,
                 'always' => false,
@@ -233,6 +245,7 @@ class QuestionBank
                 'P4_GATAL' => 0.40, 'P5_TAHUN' => 0.80, 'P6_SIMETRIS' => 0.40,
             ],
             'ACNE_VULGARIS' => [
+                'P9_REMAJA' => 0.60,
                 'P1_WAJAH' => 0.80, 'P2_JERAWAT' => 0.80,
                 'P4_NYERI' => 0.20, 'P5_MINGGU' => 0.20, 'P5_TAHUN' => 0.40,
                 'P8_KOMEDO' => 0.80,
@@ -253,6 +266,7 @@ class QuestionBank
                 'P5_MINGGU' => 0.40, 'P7_KERINGAT' => 0.60, 'P8_SATELIT' => 0.80,
             ],
             'PITYRIASIS_ALBA' => [
+                'P9_ANAK' => 0.60,
                 'P1_WAJAH' => 0.60, 'P1_BADAN' => 0.40,
                 'P2_DATAR' => 0.80, 'P3_HALUS' => 0.60,
                 'P4_TIDAKTERASA' => 0.40, 'P4_GATAL' => 0.20,
@@ -263,6 +277,7 @@ class QuestionBank
                 'P4_TIDAKTERASA' => 0.40, 'P5_TAHUN' => 0.60,
             ],
             'KELOID' => [
+                'P9_REMAJA' => 0.20,
                 'P1_BADAN' => 0.60, 'P1_WAJAH' => 0.40,
                 'P2_PLAK' => 0.60, 'P3_TIDAKADA' => 0.60,
                 'P4_GATAL' => 0.40, 'P4_NYERI' => 0.20,
@@ -270,14 +285,17 @@ class QuestionBank
                 'P7_BEKASLUKA' => 0.80,
             ],
             'IMPETIGO' => [
+                'P9_ANAK' => 0.60,
                 'P1_WAJAH' => 0.60, 'P2_KERAK' => 0.80,
                 'P4_GATAL' => 0.40, 'P5_HARI' => 0.80, 'P6_SETEMPAT' => 0.40,
             ],
             'HERPES_ZOSTER' => [
+                'P9_LANSIA' => 0.40,
                 'P1_BADAN' => 0.60, 'P2_GELEMBUNG' => 0.80,
                 'P4_NYERI' => 0.80, 'P5_HARI' => 0.60, 'P6_SATUSISI' => 0.80,
             ],
             'BASAL_CELL_CARCINOMA' => [
+                'P9_LANSIA' => 0.60,
                 'P1_WAJAH' => 0.80, 'P2_BENJOLAN' => 0.80,
                 'P3_TIDAKADA' => 0.40, 'P4_TIDAKTERASA' => 0.60,
                 'P5_BULAN' => 0.80, 'P6_SETEMPAT' => 0.60,

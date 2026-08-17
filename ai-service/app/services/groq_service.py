@@ -177,30 +177,63 @@ class GroqVisualClient(NvidiaVisualClient):
 
         return self.post_with_retry(request_body, timeout=25.0)
 
+    def api_keys(self) -> list[str]:
+        """Kunci yang tersedia, urut. Kunci tunggal tetap didukung."""
+        kunci = [k for k in settings.groq_api_keys if k]
+
+        if kunci:
+            return kunci
+
+        return [settings.groq_api_key] if settings.groq_api_key else []
+
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
+        """Coba tiap kunci berurutan; kuota habis pada satu kunci bukan alasan menyerah.
+
+        Menunggu reset kuota bisa memakan puluhan menit, sedangkan berpindah ke
+        kunci berikutnya nyaris tanpa biaya. Karena itu 429 langsung memicu
+        perpindahan kunci, dan jeda mundur hanya dipakai saat kunci terakhir pun
+        menolak - atau saat penyebabnya memang gangguan sementara (5xx).
+        """
+        kunci_tersedia = self.api_keys()
+
+        if not kunci_tersedia:
+            raise RuntimeError("Tidak ada GROQ_API_KEY/GROQ_API_KEYS yang terisi.")
+
         attempts = 3
         fallback_backoffs = [0.0, 8.0, 16.0]
+        response: httpx.Response | None = None
 
-        for attempt in range(1, attempts + 1):
-            response = httpx.post(
-                GROQ_CHAT_COMPLETIONS_URL,
-                headers={
-                    "Authorization": f"Bearer {settings.groq_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=json_body,
-                timeout=timeout,
-            )
+        for indeks, kunci in enumerate(kunci_tersedia):
+            kunci_terakhir = indeks == len(kunci_tersedia) - 1
 
-            if response.status_code == 429 or response.status_code >= 500:
-                if attempt < attempts:
+            for attempt in range(1, attempts + 1):
+                response = httpx.post(
+                    GROQ_CHAT_COMPLETIONS_URL,
+                    headers={
+                        "Authorization": f"Bearer {kunci}",
+                        "Content-Type": "application/json",
+                    },
+                    json=json_body,
+                    timeout=timeout,
+                )
+
+                if response.status_code == 429:
+                    if not kunci_terakhir:
+                        break  # kunci ini habis - langsung pakai kunci berikutnya
+
+                    if attempt < attempts:
+                        time.sleep(self.retry_after_seconds(response, fallback_backoffs[attempt]))
+                        continue
+
+                elif response.status_code >= 500 and attempt < attempts:
                     time.sleep(self.retry_after_seconds(response, fallback_backoffs[attempt]))
                     continue
 
-            response.raise_for_status()
+                response.raise_for_status()
 
-            return response.json()
+                return response.json()
 
+        assert response is not None
         response.raise_for_status()
 
         return response.json()

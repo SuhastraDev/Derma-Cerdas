@@ -138,8 +138,20 @@ class AdaptiveQuestionService
             ->unique()
             ->values();
 
-        $jumlahPertanyaan = max(2, min(6, (int) ceil($max / 2)));
-        $terpilih = $urutanGroup->take($jumlahPertanyaan);
+        // SELURUH pertanyaan diajukan, hanya urutannya yang adaptif.
+        //
+        // Sebelumnya hanya 4-6 kelompok teratas yang dipilih, dan itu terbukti
+        // menyesatkan pada sesi produksi DC-20260817-205612-FUTCL: foto biduran
+        // berakhir sebagai dermatitis kontak alergi karena P5 - satu-satunya
+        // pertanyaan yang memuat penanda khas biduran, "muncul dan hilang dalam
+        // hitungan jam" - tidak pernah ditanyakan. Pemilihan dihitung sekali di
+        // awal dari foto dan teks keluhan, lalu tidak pernah dievaluasi ulang
+        // terhadap jawaban yang masuk.
+        //
+        // Dengan bank pilihan ganda, seluruhnya hanya sembilan pertanyaan.
+        // Menanyakan semuanya jauh lebih murah daripada kehilangan pertanyaan
+        // yang justru menentukan.
+        $terpilih = $urutanGroup;
 
         return $all
             ->filter(fn (Symptom $symptom): bool => $terpilih->contains($symptom->question_group))

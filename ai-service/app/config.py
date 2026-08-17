@@ -42,6 +42,13 @@ class Settings:
     nvidia_api_key: str | None = os.getenv("NVIDIA_API_KEY") or None
     nvidia_model_name: str = os.getenv("NVIDIA_MODEL_NAME", "meta/llama-3.2-11b-vision-instruct")
     groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
+    # Beberapa kunci dipisah koma. Saat satu kunci kehabisan kuota (429),
+    # klien langsung berpindah ke kunci berikutnya alih-alih menunggu.
+    groq_api_keys: tuple[str, ...] = tuple(
+        kunci.strip()
+        for kunci in (os.getenv("GROQ_API_KEYS") or os.getenv("GROQ_API_KEY") or "").split(",")
+        if kunci.strip()
+    )
     groq_model_name: str = os.getenv("GROQ_MODEL_NAME", "qwen/qwen3.6-27b")
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
     gemini_model_name: str = os.getenv("GEMINI_MODEL_NAME", "gemini-3.6-flash")

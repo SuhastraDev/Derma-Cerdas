@@ -96,9 +96,17 @@ class ConsultationFlowTest extends TestCase
 
         $codes = collect($response->json('selected_symptoms'))->pluck('code');
 
-        $this->assertLessThan(Symptom::query()->where('is_active', true)->count(), $codes->count());
-        $this->assertGreaterThanOrEqual(5, $codes->count());
+        // Seluruh pertanyaan kini diajukan - yang adaptif hanya urutannya. Sesi
+        // produksi DC-20260817-205612-FUTCL menunjukkan bahaya melewatkan
+        // pertanyaan: penanda khas biduran tidak pernah ditanyakan.
+        $this->assertSame(Symptom::query()->where('is_active', true)->count(), $codes->count());
         $this->assertContains('P2_CINCIN', $codes);
+        $this->assertContains('P5_JAM', $codes);
+
+        // Lokasi dan bentuk tetap didahulukan karena daya pisahnya terbesar.
+        $groups = collect($response->json('selected_symptoms'))->pluck('question_group')->unique()->values();
+        $this->assertSame('P1_LOKASI', $groups->first());
+        $this->assertSame('P2_BENTUK', $groups->get(1));
 
         $this->assertLessThan(RedFlag::query()->where('is_active', true)->count(), count($response->json('selected_red_flags')));
         $this->assertGreaterThanOrEqual(4, count($response->json('selected_red_flags')));
