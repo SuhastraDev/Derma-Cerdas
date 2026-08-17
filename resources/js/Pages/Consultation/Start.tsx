@@ -823,30 +823,52 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                             Jawab sesuai kondisi saat ini. Jika ragu pada tanda bahaya, pilih “Ya” agar sistem memberi arahan yang lebih aman.
                                         </p>
                                         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => answerRedFlag(currentRedFlag.code, false)}
-                                                className={`min-h-20 rounded-xl border px-4 text-left transition ${
-                                                    answeredRedFlags.has(currentRedFlag.code) && !data.red_flags[currentRedFlag.code]
-                                                        ? 'border-neutral-900 bg-neutral-900 text-white'
-                                                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                                                }`}
-                                            >
-                                                <span className="block text-base font-semibold">Tidak</span>
-                                                <span className="mt-1 block text-sm opacity-75">Tidak ada tanda ini.</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => answerRedFlag(currentRedFlag.code, true)}
-                                                className={`min-h-20 rounded-xl border px-4 text-left transition ${
-                                                    data.red_flags[currentRedFlag.code]
-                                                        ? 'border-red-700 bg-red-700 text-white'
-                                                        : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
-                                                }`}
-                                            >
-                                                <span className="block text-base font-semibold">Ya</span>
-                                                <span className="mt-1 block text-sm opacity-75">Ada tanda ini.</span>
-                                            </button>
+                                            {[
+                                                {
+                                                    nilai: false,
+                                                    label: 'Tidak',
+                                                    penjelasan: 'Tanda ini tidak saya alami.',
+                                                    aktif: answeredRedFlags.has(currentRedFlag.code) && !data.red_flags[currentRedFlag.code],
+                                                    kelasAktif: 'border-neutral-900 bg-neutral-900 text-white shadow-md',
+                                                    kelasPasif: 'border-slate-200 bg-white text-slate-800 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm',
+                                                },
+                                                {
+                                                    nilai: true,
+                                                    label: 'Ya',
+                                                    penjelasan: 'Tanda ini saya alami. Sistem akan mengutamakan rujukan.',
+                                                    aktif: Boolean(data.red_flags[currentRedFlag.code]),
+                                                    kelasAktif: 'border-red-700 bg-red-700 text-white shadow-md',
+                                                    kelasPasif: 'border-red-200 bg-white text-red-800 hover:-translate-y-0.5 hover:bg-red-50 hover:shadow-sm',
+                                                },
+                                            ].map((pilihan, index) => (
+                                                <button
+                                                    key={pilihan.label}
+                                                    type="button"
+                                                    onClick={() => answerRedFlag(currentRedFlag.code, pilihan.nilai)}
+                                                    style={{ animationDelay: `${index * 45}ms` }}
+                                                    className={`consultation-option-enter group flex min-h-[4.5rem] items-start gap-3 rounded-xl border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
+                                                        pilihan.aktif ? pilihan.kelasAktif : pilihan.kelasPasif
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                                                            pilihan.aktif ? 'border-white bg-white' : 'border-slate-300 group-hover:border-red-400'
+                                                        }`}
+                                                    >
+                                                        {pilihan.aktif && (
+                                                            <span className={`h-2.5 w-2.5 rounded-full ${pilihan.nilai ? 'bg-red-700' : 'bg-neutral-900'}`} />
+                                                        )}
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block text-sm font-semibold leading-6 sm:text-base">
+                                                            {pilihan.label}
+                                                        </span>
+                                                        <span className={`mt-1 block text-xs leading-5 sm:text-sm ${pilihan.aktif ? 'text-white/75' : 'text-slate-500'}`}>
+                                                            {pilihan.penjelasan}
+                                                        </span>
+                                                    </span>
+                                                </button>
+                                            ))}
                                         </div>
                                         <div className="mt-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                                             <button
