@@ -343,6 +343,54 @@ def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
     assert client_with_quota.skin_filter_calls == 0
 
 
+def test_dataset_retrieval_becomes_visual_fallback_when_nvidia_returns_no_candidates() -> None:
+    class RetrievalIndex:
+        def search_base64(self, image_base64, allowed_classes, limit=20):
+            return [
+                {"dataset_class_name": "Psoriasis", "similarity": 0.951, "sample_files": ["pso.jpg"]},
+                {"dataset_class_name": "Dry_Skin_Eczema", "similarity": 0.944, "sample_files": ["dry.jpg"]},
+            ]
+
+    class EmptyCandidateClient:
+        provider = "nvidia"
+
+        def analyze(
+            self,
+            image_base64,
+            candidate_classes,
+            dataset_matches,
+            complaint_text="",
+            symptom_questions=None,
+        ):
+            return {
+                "provider_status": "ok",
+                "is_valid_skin_image": True,
+                "candidates": [],
+                "suggested_symptom_codes": [],
+                "warnings": ["Respons NVIDIA NIM tidak berbentuk JSON valid."],
+                "raw_response": {"text": "not json"},
+            }
+
+        def validate_skin_image(self, image_base64):
+            raise AssertionError("skin filter should not run when image is already valid")
+
+    response = VisualAnalysisService(EmptyCandidateClient(), RetrievalIndex()).analyze(
+        AnalyzeImageRequest(
+            consultation_id="DC-FALLBACK-001",
+            image_base64=sample_image_base64(),
+            candidate_classes=["Psoriasis", "Dry_Skin_Eczema"],
+        ),
+        ImageValidationResponse(is_valid=True, mime_type="image/png", size_bytes=100),
+    )
+
+    assert response.provider_status == "ok"
+    assert response.is_valid_skin_image is True
+    assert response.candidates
+    assert response.candidates[0].dataset_class_name == "Psoriasis"
+    assert response.candidates[0].visual_score <= 0.68
+    assert any("fallback dari indeks visual dataset" in warning for warning in response.warnings)
+
+
 def test_nvidia_429_is_classified_as_quota_exhausted() -> None:
     response = NvidiaVisualClient().provider_error_response(
         RuntimeError("429 rate_limit_exceeded: rate limit reached"),

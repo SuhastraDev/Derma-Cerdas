@@ -45,6 +45,14 @@ class VisualAnalysisService:
         provider_status = str(ai_result.get("provider_status", "ok"))
         raw_response = dict(ai_result.get("raw_response", {}))
         raw_response["dataset_retrieval"] = dataset_matches
+
+        if provider_status == "ok" and is_valid_skin_image and not candidates:
+            candidates = self.dataset_fallback_candidates(dataset_matches, candidate_classes)
+            if candidates:
+                warnings.append(
+                    "NVIDIA NIM tidak menghasilkan JSON kandidat yang valid; sistem memakai kandidat fallback dari indeks visual dataset."
+                )
+
         allowed_symptom_codes = {
             str(question.get("code"))
             for question in payload.symptom_questions
@@ -77,3 +85,42 @@ class VisualAnalysisService:
             warnings=warnings,
             raw_response=raw_response,
         )
+
+    def dataset_fallback_candidates(
+        self,
+        dataset_matches: list[dict],
+        candidate_classes: list[str],
+    ) -> list:
+        fallback = []
+
+        for match in dataset_matches[:6]:
+            class_name = str(match.get("dataset_class_name", "")).strip()
+
+            if not class_name:
+                continue
+
+            try:
+                similarity = float(match.get("similarity", 0))
+            except (TypeError, ValueError):
+                similarity = 0.0
+
+            if similarity < 0.88:
+                continue
+
+            # The handmade dataset index is only a retrieval hint, not a
+            # trained dermatology classifier. Keep its confidence moderate.
+            fallback.append(
+                {
+                    "dataset_class_name": class_name,
+                    "visual_score": round(min(0.68, max(0.45, 0.45 + ((similarity - 0.88) * 2.0))), 4),
+                    "reason": (
+                        "Fallback indeks dataset: pola warna/tekstur foto paling mirip dengan "
+                        f"class {class_name} (similarity {similarity:.4f}); perlu konfirmasi gejala."
+                    ),
+                }
+            )
+
+            if len(fallback) >= 3:
+                break
+
+        return normalize_candidates(fallback, candidate_classes)
