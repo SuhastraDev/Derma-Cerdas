@@ -27,6 +27,12 @@ NVIDIA_MAX_IMAGE_DIMENSION = 768
 class NvidiaVisualClient:
     provider = "nvidia"
 
+    def model_name(self) -> str:
+        """Nama model yang dilaporkan. Subclass menimpanya agar log tidak
+        menyebut model NVIDIA saat yang menjawab provider lain."""
+        return settings.nvidia_model_name
+
+
     def analyze(
         self,
         image_base64: str,
@@ -91,7 +97,7 @@ class NvidiaVisualClient:
             "provider_status": "ok",
             "detected_codes": detected_codes,
             "warnings": [str(warning) for warning in warnings],
-            "raw_response": {"text": text, "model": settings.nvidia_model_name},
+            "raw_response": {"text": text, "model": self.model_name()},
         }
 
     def red_flag_prompt(self, complaint_text: str, red_flags: list[dict[str, str]]) -> str:
@@ -215,7 +221,7 @@ class NvidiaVisualClient:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         request_body: dict[str, Any] = {
-            "model": settings.nvidia_model_name,
+            "model": self.model_name(),
             "temperature": 0.1,
             "max_tokens": 700,
             "messages": [
@@ -248,7 +254,7 @@ class NvidiaVisualClient:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         request_body: dict[str, Any] = {
-            "model": settings.nvidia_model_name,
+            "model": self.model_name(),
             "temperature": 0.1,
             "max_tokens": 256,
             "messages": [{"role": "user", "content": prompt}],
@@ -504,7 +510,7 @@ class NvidiaVisualClient:
             "raw_response": {
                 "error": error,
                 "error_code": provider_status,
-                "model": settings.nvidia_model_name,
+                "model": self.model_name(),
             },
         }
 
@@ -558,7 +564,7 @@ class NvidiaVisualClient:
             "warnings": [str(warning) for warning in warnings],
             "raw_response": {
                 "text": text,
-                "model": settings.nvidia_model_name,
+                "model": self.model_name(),
                 "skin_evidence_score": skin_evidence_score,
             },
         }
@@ -674,7 +680,7 @@ class NvidiaVisualClient:
             "warnings": warnings,
             "raw_response": {
                 "text": text,
-                "model": settings.nvidia_model_name,
+                "model": self.model_name(),
                 "skin_evidence_score": skin_evidence_score,
                 "contains_human_body_part": parsed.get("contains_human_body_part"),
                 "contains_visible_skin": parsed.get("contains_visible_skin"),

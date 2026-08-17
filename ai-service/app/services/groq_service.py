@@ -18,6 +18,9 @@ class GroqVisualClient(NvidiaVisualClient):
     visual_candidate_limit = 12
     total_candidate_cap = 28
 
+    def model_name(self) -> str:
+        return settings.groq_model_name
+
     def api_keys(self) -> list[str]:
         """Seluruh kunci yang tersedia, berurutan.
 
@@ -91,7 +94,7 @@ class GroqVisualClient(NvidiaVisualClient):
             "provider_status": "ok",
             "detected_codes": detected_codes,
             "warnings": [str(warning) for warning in warnings],
-            "raw_response": {"text": text, "model": settings.groq_model_name},
+            "raw_response": {"text": text, "model": self.model_name()},
         }
 
     def provider_response(
@@ -154,7 +157,7 @@ class GroqVisualClient(NvidiaVisualClient):
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         request_body: dict[str, Any] = {
-            "model": settings.groq_model_name,
+            "model": self.model_name(),
             "temperature": 0.1,
             "max_completion_tokens": 450,
             "reasoning_effort": "none",
@@ -180,7 +183,7 @@ class GroqVisualClient(NvidiaVisualClient):
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         request_body: dict[str, Any] = {
-            "model": settings.groq_model_name,
+            "model": self.model_name(),
             "temperature": 0.1,
             "max_completion_tokens": 160,
             "reasoning_effort": "none",
@@ -262,7 +265,7 @@ class GroqVisualClient(NvidiaVisualClient):
 
     def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
         response = super().provider_error_response(exception, operation)
-        response["raw_response"]["model"] = settings.groq_model_name
+        response["raw_response"]["model"] = self.model_name()
         response["warnings"] = [
             warning.replace("NVIDIA NIM API", "Groq API").replace("NVIDIA NIM", "Groq")
             for warning in response["warnings"]
