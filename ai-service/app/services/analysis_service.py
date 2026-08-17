@@ -25,12 +25,14 @@ class VisualAnalysisService:
         # model can be offered the class it actually looks like, even outside
         # Laravel's symptom-relevant shortlist - e.g. a condition with no
         # validated symptom/CF knowledge base yet, like Psoriasis.
+        visual_candidate_limit = int(getattr(self.client, "visual_candidate_limit", VISUAL_CANDIDATE_LIMIT))
+        total_candidate_cap = int(getattr(self.client, "total_candidate_cap", TOTAL_CANDIDATE_CAP))
         dataset_matches = self.dataset_index.search_base64(
-            payload.image_base64, allowed_classes=[], limit=VISUAL_CANDIDATE_LIMIT
+            payload.image_base64, allowed_classes=[], limit=visual_candidate_limit
         )
         visual_match_classes = [str(match["dataset_class_name"]) for match in dataset_matches]
 
-        candidate_classes = list(dict.fromkeys([*hint_classes, *visual_match_classes]))[:TOTAL_CANDIDATE_CAP]
+        candidate_classes = list(dict.fromkeys([*hint_classes, *visual_match_classes]))[:total_candidate_cap]
 
         ai_result = self.client.analyze(
             payload.image_base64,
@@ -52,6 +54,17 @@ class VisualAnalysisService:
                 warnings.append(
                     "NVIDIA NIM tidak menghasilkan JSON kandidat yang valid; sistem memakai kandidat fallback dari indeks visual dataset."
                 )
+        elif provider_status not in {"ok", "mock_mode"}:
+            fallback_candidates = self.dataset_fallback_candidates(dataset_matches, candidate_classes)
+
+            if fallback_candidates:
+                raw_response["provider_status_before_dataset_fallback"] = provider_status
+                warnings.append(
+                    "Provider visual sedang sibuk/tidak tersedia; sistem memakai kandidat fallback dari indeks visual dataset."
+                )
+                provider_status = "ok"
+                is_valid_skin_image = True
+                candidates = fallback_candidates
 
         allowed_symptom_codes = {
             str(question.get("code"))

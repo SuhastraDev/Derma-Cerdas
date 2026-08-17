@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from typing import Any
 
 import httpx
@@ -13,6 +14,9 @@ GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 class GroqVisualClient(NvidiaVisualClient):
     provider = "groq"
+    max_image_dimension = 512
+    visual_candidate_limit = 12
+    total_candidate_cap = 28
 
     def analyze(
         self,
@@ -137,7 +141,7 @@ class GroqVisualClient(NvidiaVisualClient):
         request_body: dict[str, Any] = {
             "model": settings.groq_model_name,
             "temperature": 0.1,
-            "max_completion_tokens": 700,
+            "max_completion_tokens": 450,
             "reasoning_effort": "none",
             "messages": [
                 {
@@ -163,7 +167,7 @@ class GroqVisualClient(NvidiaVisualClient):
         request_body: dict[str, Any] = {
             "model": settings.groq_model_name,
             "temperature": 0.1,
-            "max_completion_tokens": 256,
+            "max_completion_tokens": 160,
             "reasoning_effort": "none",
             "messages": [{"role": "user", "content": prompt}],
         }
@@ -174,8 +178,8 @@ class GroqVisualClient(NvidiaVisualClient):
         return self.post_with_retry(request_body, timeout=25.0)
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
-        attempts = 2
-        backoff_seconds = 2.0
+        attempts = 3
+        fallback_backoffs = [0.0, 8.0, 16.0]
 
         for attempt in range(1, attempts + 1):
             response = httpx.post(
@@ -190,7 +194,7 @@ class GroqVisualClient(NvidiaVisualClient):
 
             if response.status_code == 429 or response.status_code >= 500:
                 if attempt < attempts:
-                    time.sleep(backoff_seconds * attempt)
+                    time.sleep(self.retry_after_seconds(response, fallback_backoffs[attempt]))
                     continue
 
             response.raise_for_status()
@@ -200,6 +204,22 @@ class GroqVisualClient(NvidiaVisualClient):
         response.raise_for_status()
 
         return response.json()
+
+    def retry_after_seconds(self, response: httpx.Response, fallback_seconds: float) -> float:
+        retry_after = response.headers.get("retry-after")
+
+        if retry_after:
+            try:
+                return min(35.0, max(1.0, float(retry_after)))
+            except ValueError:
+                pass
+
+        match = re.search(r"try again in ([0-9.]+)s", response.text, re.IGNORECASE)
+
+        if match:
+            return min(35.0, max(1.0, float(match.group(1)) + 1.0))
+
+        return fallback_seconds
 
     def provider_error_response(self, exception: Exception, operation: str) -> dict[str, Any]:
         response = super().provider_error_response(exception, operation)

@@ -196,9 +196,10 @@ class NvidiaVisualClient:
         try:
             with Image.open(BytesIO(raw)) as image:
                 image = ImageOps.exif_transpose(image) or image
+                max_dimension = getattr(self, "max_image_dimension", NVIDIA_MAX_IMAGE_DIMENSION)
 
-                if max(image.size) > NVIDIA_MAX_IMAGE_DIMENSION:
-                    image.thumbnail((NVIDIA_MAX_IMAGE_DIMENSION, NVIDIA_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
+                if max(image.size) > max_dimension:
+                    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
 
                 buffer = BytesIO()
                 image.convert("RGB").save(buffer, format="JPEG", quality=85)

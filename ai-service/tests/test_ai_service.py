@@ -406,6 +406,53 @@ def test_dataset_retrieval_becomes_visual_fallback_when_nvidia_returns_no_candid
     assert any("fallback dari indeks visual dataset" in warning for warning in response.warnings)
 
 
+def test_dataset_retrieval_keeps_consultation_running_when_provider_is_unavailable() -> None:
+    class RetrievalIndex:
+        def search_base64(self, image_base64, allowed_classes, limit=20):
+            return [
+                {"dataset_class_name": "Tinea_Corporis", "similarity": 0.94, "sample_files": ["tinea.jpg"]},
+            ]
+
+    class BusyProviderClient:
+        provider = "groq"
+        visual_candidate_limit = 12
+        total_candidate_cap = 28
+
+        def analyze(
+            self,
+            image_base64,
+            candidate_classes,
+            dataset_matches,
+            complaint_text="",
+            symptom_questions=None,
+        ):
+            return {
+                "provider_status": "unavailable",
+                "is_valid_skin_image": False,
+                "candidates": [],
+                "suggested_symptom_codes": [],
+                "warnings": ["Groq vision API sedang tidak tersedia."],
+                "raw_response": {"error": "503 over capacity"},
+            }
+
+        def validate_skin_image(self, image_base64):
+            raise AssertionError("provider skin filter should not run during dataset fallback")
+
+    response = VisualAnalysisService(BusyProviderClient(), RetrievalIndex()).analyze(
+        AnalyzeImageRequest(
+            consultation_id="DC-DEGRADED-001",
+            image_base64=sample_image_base64(),
+            candidate_classes=["Tinea_Corporis"],
+        ),
+        ImageValidationResponse(is_valid=True, mime_type="image/png", size_bytes=100),
+    )
+
+    assert response.provider_status == "ok"
+    assert response.is_valid_skin_image is True
+    assert response.candidates[0].dataset_class_name == "Tinea_Corporis"
+    assert response.raw_response["provider_status_before_dataset_fallback"] == "unavailable"
+
+
 def test_nvidia_429_is_classified_as_quota_exhausted() -> None:
     response = NvidiaVisualClient().provider_error_response(
         RuntimeError("429 rate_limit_exceeded: rate limit reached"),
@@ -527,3 +574,15 @@ def test_groq_chat_completion_uses_openai_compatible_vision_body(monkeypatch) ->
     assert captured["json"]["model"] == settings.groq_model_name
     assert captured["json"]["response_format"] == {"type": "json_object"}
     assert captured["json"]["messages"][0]["content"][1]["type"] == "image_url"
+    assert captured["json"]["max_completion_tokens"] == 450
+
+
+def test_groq_retry_after_parser_reads_provider_wait_hint() -> None:
+    import httpx
+
+    response = httpx.Response(
+        429,
+        text='{"error":{"message":"Please try again in 20.3325s."}}',
+    )
+
+    assert GroqVisualClient().retry_after_seconds(response, fallback_seconds=8.0) == 21.3325
