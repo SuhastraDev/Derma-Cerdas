@@ -302,36 +302,34 @@ class DatabaseSeeder extends Seeder
      */
     private function seedDatasetMappings(array $diseases): void
     {
+        // dataset_class_id memakai nomor resmi classes.txt SD-198 (bukan index sekuensial)
+        // supaya tidak bertabrakan dengan class lain saat dataset:import-classes dijalankan.
         $classNames = [
-            'ECZEMA' => ['Eczema', 'Eksim / dermatitis umum'],
-            'ACUTE_ECZEMA' => ['Acute_Eczema', 'Eksim akut ringan'],
-            'DRY_SKIN_ECZEMA' => ['Dry_Skin_Eczema', 'Eksim kulit kering'],
-            'ALLERGIC_CONTACT_DERMATITIS' => ['Allergic_Contact_Dermatitis', 'Dermatitis kontak alergi'],
-            'URTICARIA' => ['Urticaria', 'Biduran / urtikaria ringan'],
-            'CANDIDIASIS' => ['Candidiasis', 'Kandidiasis kulit ringan'],
-            'TINEA_CORPORIS' => ['Tinea_Corporis', 'Kurap badan'],
-            'TINEA_CRURIS' => ['Tinea_Cruris', 'Jamur lipatan paha ringan'],
-            'TINEA_PEDIS' => ['Tinea_Pedis', 'Kutu air / jamur kaki'],
-            'TINEA_VERSICOLOR' => ['Tinea_Versicolor', 'Panu'],
+            'ECZEMA' => ['Eczema', 'Eksim / dermatitis umum', 55],
+            'ACUTE_ECZEMA' => ['Acute_Eczema', 'Eksim akut ringan', 11],
+            'DRY_SKIN_ECZEMA' => ['Dry_Skin_Eczema', 'Eksim kulit kering', 51],
+            'ALLERGIC_CONTACT_DERMATITIS' => ['Allergic_Contact_Dermatitis', 'Dermatitis kontak alergi', 12],
+            'URTICARIA' => ['Urticaria', 'Biduran / urtikaria ringan', 193],
+            'CANDIDIASIS' => ['Candidiasis', 'Kandidiasis kulit ringan', 31],
+            'TINEA_CORPORIS' => ['Tinea_Corporis', 'Kurap badan', 182],
+            'TINEA_CRURIS' => ['Tinea_Cruris', 'Jamur lipatan paha ringan', 183],
+            'TINEA_PEDIS' => ['Tinea_Pedis', 'Kutu air / jamur kaki', 186],
+            'TINEA_VERSICOLOR' => ['Tinea_Versicolor', 'Panu', 187],
         ];
 
-        $index = 1;
-
-        foreach ($classNames as $diseaseCode => [$className, $namaIndonesia]) {
+        foreach ($classNames as $diseaseCode => [$className, $namaIndonesia, $classId]) {
             DatasetClassMapping::query()->updateOrCreate(
                 ['dataset_class_name' => $className],
                 [
-                    'dataset_class_id' => $index,
+                    'dataset_class_id' => $classId,
                     'nama_indonesia' => $namaIndonesia,
                     'scope_category' => 'swamedikasi',
                     'boleh_rekomendasi_obat' => $diseaseCode !== 'DRY_SKIN_ECZEMA',
                     'default_action' => $diseaseCode === 'DRY_SKIN_ECZEMA' ? 'educate_only' : 'recommend_otc',
                     'disease_id' => $diseases[$diseaseCode]->id,
-                    'risk_note' => 'Mapping MVP awal. Sesuaikan dataset_class_id setelah import classes.txt SD-198 asli.',
+                    'risk_note' => 'Basis pengetahuan tervalidasi (naskah/MVP), bukan grup klinis generik dataset:link-diseases.',
                 ],
             );
-
-            $index++;
         }
     }
 
