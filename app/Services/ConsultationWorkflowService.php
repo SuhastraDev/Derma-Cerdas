@@ -348,8 +348,12 @@ class ConsultationWorkflowService
         // tetap didahulukan lewat decide() normal (F07 menggantikan semua aturan lain).
         $hintedDisease = $this->hintedNonSelfCareDisease($diseaseHints);
 
+        // Kandidat yang berasal dari fallback indeks dataset ($hasValidatedVisual
+        // false) tidak boleh menggeser keputusan lewat F08/F09 - sumbernya indeks
+        // ber-recall 3,5%, bukan analisis model.
         if (
             ! $hasRedFlags
+            && $hasValidatedVisual
             && $visualDisease
             && $visualScore >= self::VISUAL_STRONG
             && $this->visualMatchesDiseaseHint($visualDisease, $diseaseHints)
@@ -359,6 +363,7 @@ class ConsultationWorkflowService
             $finalDisease = $visualDisease;
         } elseif (
             ! $hasRedFlags
+            && $hasValidatedVisual
             && $this->visualFindingMustNotBeMasked($visualDisease, $visualScore, $textualDisease, $textualCf)
         ) {
             $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);

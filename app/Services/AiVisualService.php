@@ -75,7 +75,13 @@ class AiVisualService
         $body = $response->json() ?? [];
         $providerStatus = (string) ($body['provider_status'] ?? 'ok');
 
-        if ($providerStatus !== 'ok') {
+        // 'dataset_fallback' berarti model visual gagal dan kandidat berasal dari
+        // indeks visual dataset (recall@1 3,5%). Hasilnya tetap ditampilkan
+        // sebagai informasi, tetapi ditandai 'degraded' agar tidak diperlakukan
+        // sebagai analisis visual tervalidasi - keputusan jatuh ke aturan F06.
+        $isDegraded = $providerStatus === 'dataset_fallback';
+
+        if ($providerStatus !== 'ok' && ! $isDegraded) {
             Log::warning('AI visual provider unavailable.', [
                 'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
                 'provider_status' => $providerStatus,
@@ -100,6 +106,14 @@ class AiVisualService
             ];
         }
 
+        if ($isDegraded) {
+            Log::warning('AI visual provider fell back to the dataset index.', [
+                'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
+                'warnings' => array_values($body['warnings'] ?? []),
+                'raw_error' => $body['raw_response']['error'] ?? null,
+            ]);
+        }
+
         $visualCandidates = $this->mapCandidates($body['candidates'] ?? []);
         $isValidSkinImage = (bool) ($body['is_valid_skin_image'] ?? false) || $visualCandidates !== [];
 
@@ -107,7 +121,11 @@ class AiVisualService
             'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
             'provider_status' => $providerStatus,
             'is_valid_skin_image' => $isValidSkinImage,
-            'validation_status' => $isValidSkinImage ? 'valid' : 'invalid',
+            'validation_status' => match (true) {
+                ! $isValidSkinImage => 'invalid',
+                $isDegraded => 'degraded',
+                default => 'valid',
+            },
             'candidates' => $visualCandidates,
             'suggested_symptom_codes' => $this->validSuggestedSymptomCodes($body['suggested_symptom_codes'] ?? []),
             'warnings' => array_values($body['warnings'] ?? []),

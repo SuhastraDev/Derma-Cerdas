@@ -22,6 +22,11 @@ class AnalyzeImageRequest(BaseModel):
     candidate_classes: list[str] = Field(default_factory=list)
     complaint_text: str = ""
     symptom_questions: list[dict[str, str]] = Field(default_factory=list)
+    # Bila True, model HANYA boleh memilih dari candidate_classes; hasil indeks
+    # visual tidak ditambahkan ke daftar. Diperlukan untuk pengukuran akurasi
+    # yang terkendali, karena penambahan otomatis menyuntikkan tebakan indeks
+    # (recall@1 3,5%) ke dalam ruang pilihan model.
+    strict_candidates: bool = False
 
 
 class VisualCandidate(BaseModel):

@@ -28,11 +28,16 @@ class VisualAnalysisService:
         visual_candidate_limit = int(getattr(self.client, "visual_candidate_limit", VISUAL_CANDIDATE_LIMIT))
         total_candidate_cap = int(getattr(self.client, "total_candidate_cap", TOTAL_CANDIDATE_CAP))
         dataset_matches = self.dataset_index.search_base64(
-            payload.image_base64, allowed_classes=[], limit=visual_candidate_limit
+            payload.image_base64,
+            allowed_classes=hint_classes if payload.strict_candidates else [],
+            limit=visual_candidate_limit,
         )
-        visual_match_classes = [str(match["dataset_class_name"]) for match in dataset_matches]
 
-        candidate_classes = list(dict.fromkeys([*hint_classes, *visual_match_classes]))[:total_candidate_cap]
+        if payload.strict_candidates and hint_classes:
+            candidate_classes = hint_classes[:total_candidate_cap]
+        else:
+            visual_match_classes = [str(match["dataset_class_name"]) for match in dataset_matches]
+            candidate_classes = list(dict.fromkeys([*hint_classes, *visual_match_classes]))[:total_candidate_cap]
 
         ai_result = self.client.analyze(
             payload.image_base64,
@@ -52,8 +57,10 @@ class VisualAnalysisService:
             candidates = self.dataset_fallback_candidates(dataset_matches, candidate_classes)
             if candidates:
                 warnings.append(
-                    "NVIDIA NIM tidak menghasilkan JSON kandidat yang valid; sistem memakai kandidat fallback dari indeks visual dataset."
+                    f"{self.client.provider} tidak menghasilkan JSON kandidat yang valid; "
+                    "sistem memakai kandidat fallback dari indeks visual dataset."
                 )
+                provider_status = "dataset_fallback"
         elif provider_status not in {"ok", "mock_mode"}:
             fallback_candidates = self.dataset_fallback_candidates(dataset_matches, candidate_classes)
 
@@ -62,7 +69,11 @@ class VisualAnalysisService:
                 warnings.append(
                     "Provider visual sedang sibuk/tidak tersedia; sistem memakai kandidat fallback dari indeks visual dataset."
                 )
-                provider_status = "ok"
+                # JANGAN laporkan "ok": hasil ini berasal dari indeks visual
+                # (recall@1 3,5%), bukan dari model. Menyamarkannya sebagai
+                # keberhasilan membuat kegagalan provider tidak terlihat sama
+                # sekali di metadata konsultasi maupun di layar pengguna.
+                provider_status = "dataset_fallback"
                 is_valid_skin_image = True
                 candidates = fallback_candidates
 
