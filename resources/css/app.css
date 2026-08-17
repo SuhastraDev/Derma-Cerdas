@@ -52,13 +52,35 @@ body {
     animation: consultation-card-enter 260ms ease-out both;
 }
 
+/* Kartu pilihan jawaban muncul berurutan agar mata sempat memindai opsinya. */
+@keyframes consultation-option-enter {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.consultation-option-enter {
+    animation: consultation-option-enter 240ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
     }
 
     .page-transition,
-    .consultation-card-enter {
+    .consultation-card-enter,
+    .consultation-option-enter {
         animation: none;
+    }
+
+    .consultation-option-enter {
+        transition: none;
     }
 }

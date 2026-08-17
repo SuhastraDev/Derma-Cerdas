@@ -20,12 +20,17 @@ class AdaptiveQuestionServiceTest extends TestCase
                 'symptom_evidence' => [],
             ],
             visualCandidates: [],
-            aiSuggestedCodes: ['G11'],
+            aiSuggestedCodes: ['P2_DATAR'],
             min: 5,
             max: 8,
         );
 
-        $this->assertSame('G11', $questions->first()?->code);
+        // P1 (lokasi) dan P2 (bentuk) selalu didahulukan karena daya pisahnya
+        // paling besar; saran AI menentukan pertanyaan BERIKUTNYA, bukan menggeser
+        // keduanya. Yang dijamin: pertanyaan asal saran AI ikut terpilih, lengkap
+        // dengan seluruh pilihannya.
+        $this->assertSame('P1_LOKASI', $questions->first()?->question_group);
+        $this->assertContains('P2_DATAR', $questions->pluck('code'));
         $this->assertGreaterThanOrEqual(5, $questions->count());
     }
 }

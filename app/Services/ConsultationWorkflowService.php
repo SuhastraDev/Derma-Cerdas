@@ -346,8 +346,6 @@ class ConsultationWorkflowService
         // gejala nyaris tidak berbukti apa pun. Tampilkan temuan visual itu langsung
         // (edukasi/rujuk) alih-alih dipaksakan ke Pt yang tidak relevan. Tanda bahaya
         // tetap didahulukan lewat decide() normal (F07 menggantikan semua aturan lain).
-        $hintedDisease = $this->hintedNonSelfCareDisease($diseaseHints);
-
         // Kandidat yang berasal dari fallback indeks dataset ($hasValidatedVisual
         // false) tidak boleh menggeser keputusan lewat F08/F09 - sumbernya indeks
         // ber-recall 3,5%, bukan analisis model.
@@ -368,17 +366,6 @@ class ConsultationWorkflowService
         ) {
             $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);
             $finalDisease = $visualDisease;
-        } elseif (
-            ! $hasRedFlags
-            && $hintedDisease
-            && (! $visualDisease || $visualScore < self::VISUAL_STRONG)
-            && $this->symptomsSupportHint($hintedDisease, $normalizedSymptoms)
-        ) {
-            $decision = $this->fusionDecisionService->decideContextSymptomAligned(
-                $hintedDisease,
-                $this->hintSupportScore($hintedDisease, $normalizedSymptoms)
-            );
-            $finalDisease = $hintedDisease;
         } else {
             $decision = $this->fusionDecisionService->decide(
                 textualDisease: $textualDisease,
@@ -461,93 +448,9 @@ class ConsultationWorkflowService
         return $visualClasses->intersect($hintClasses)->isNotEmpty();
     }
 
-    /**
-     * @param  array<int, array<string, mixed>>  $diseaseHints
-     */
-    private function hintedNonSelfCareDisease(array $diseaseHints): ?Disease
-    {
-        foreach ($diseaseHints as $hint) {
-            if (! is_array($hint) || ! is_string($hint['disease_code'] ?? null)) {
-                continue;
-            }
 
-            $disease = Disease::query()
-                ->where('code', $hint['disease_code'])
-                ->whereIn('default_action', ['educate_only', 'refer'])
-                ->first();
 
-            if ($disease) {
-                return $disease;
-            }
-        }
 
-        return null;
-    }
-
-    /**
-     * @param  array<string, float>  $normalizedSymptoms
-     */
-    private function symptomsSupportHint(Disease $disease, array $normalizedSymptoms): bool
-    {
-        return $this->hintSupportScore($disease, $normalizedSymptoms) >= 0.45;
-    }
-
-    /**
-     * @param  array<string, float>  $normalizedSymptoms
-     */
-    private function hintSupportScore(Disease $disease, array $normalizedSymptoms): float
-    {
-        $profileCodes = $this->hintProfileSymptomCodes($disease);
-
-        if ($profileCodes === []) {
-            return 0.0;
-        }
-
-        $totalWeight = array_sum($profileCodes);
-        $matchedWeight = 0.0;
-
-        foreach ($profileCodes as $code => $weight) {
-            $value = (float) ($normalizedSymptoms[$code] ?? 0.0);
-
-            if ($value > 0.0) {
-                $matchedWeight += $weight * min(1.0, $value);
-            }
-        }
-
-        return round($matchedWeight / max(0.1, $totalWeight), 4);
-    }
-
-    /**
-     * @return array<string, float>
-     */
-    private function hintProfileSymptomCodes(Disease $disease): array
-    {
-        $tokens = collect([
-            $disease->code,
-            $disease->name,
-            $disease->name_indonesian,
-            ...$disease->loadMissing('datasetMappings')->datasetMappings->pluck('dataset_class_name')->all(),
-        ])
-            ->filter(fn ($token): bool => is_string($token) && trim($token) !== '')
-            ->map(fn (string $token): string => str($token)->lower()->replace(['_', '-'], ' ')->value());
-
-        // CATATAN: profil ini masih dikeraskan khusus psoriasis dan perlu diganti
-        // mekanisme umum. Kode gejala warisan (DRY_SCALY_SKIN, RED_RASH, ITCHING)
-        // sudah dibuang karena gejalanya tidak lagi aktif, sehingga bobotnya hanya
-        // memperbesar penyebut tanpa pernah bisa terpenuhi.
-        if ($tokens->contains(fn (string $token): bool => str_contains($token, 'psoriasis'))) {
-            return [
-                'G03' => 1.0,
-                'G08' => 0.8,
-                'G01' => 0.6,
-                'G16' => 0.5,
-                'G19' => 0.4,
-                'G02' => 0.3,
-            ];
-        }
-
-        return [];
-    }
 
     /**
      * @return array<int, array<string, mixed>>

@@ -93,45 +93,54 @@ class ComplaintExtractionService
      */
     private function extractSymptomEvidence(string $text): array
     {
+        // Kode di sini HARUS sama dengan kode pilihan pada QuestionBank, karena
+        // gunanya cuma satu: memberi tahu AdaptiveQuestionService pertanyaan mana
+        // yang layak diajukan lebih dulu. Nilai skornya tidak pernah menjadi
+        // jawaban - lihat ConsultationWorkflowService::process().
         $dictionary = [
-            'ITCHING' => [0.7, ['gatal', 'digaruk', 'garuk']],
-            'RED_RASH' => [0.65, ['merah', 'kemerahan', 'ruam', 'bintik merah', 'bercak merah']],
-            'DRY_SCALY_SKIN' => [0.7, ['kering', 'bersisik', 'sisik', 'kasar', 'mengelupas', 'pecah pecah']],
-            'VESICLES_OOZING' => [0.55, ['berair', 'cairan', 'lepuh', 'melepuh', 'bintil', 'gelembung']],
-            'CONTACT_TRIGGER' => [0.8, ['sabun', 'detergen', 'kosmetik', 'skincare', 'parfum', 'logam', 'tanaman', 'pemicu', 'alergi']],
-            'WHEALS_COME_GO' => [0.85, ['biduran', 'bentol', 'hilang timbul', 'muncul hilang', 'berpindah']],
-            'RING_SHAPED_EDGE' => [0.85, ['melingkar', 'lingkar', 'cincin', 'tepi merah', 'kurap']],
-            'MOIST_FOLD_RASH' => [0.75, ['lipatan', 'selangkangan', 'paha', 'ketiak', 'lembap', 'lembab']],
-            // Istilah terlalu umum dibuang: "kaki" saja bukan bukti kutu air,
-            // "putih" bisa berarti warna kulit, "panas" lazimnya berarti demam,
-            // dan satuan waktu muncul di hampir semua keluhan.
-            'FOOT_SCALING' => [0.85, ['sela jari', 'telapak kaki', 'kutu air']],
-            'WHITE_BROWN_PATCHES' => [0.75, ['panu', 'bercak putih', 'bercak cokelat', 'bercak coklat']],
-            'BURNING_STINGING' => [0.55, ['perih', 'pedih', 'terbakar', 'menyengat']],
-            'RECURRENT_OR_DAYS' => [0.55, ['kambuh', 'berulang', 'berminggu', 'berbulan']],
+            'P1_KUKU' => [0.8, ['kuku']],
+            'P1_KAKI' => [0.8, ['sela jari', 'telapak kaki', 'kutu air']],
+            'P1_LIPATAN' => [0.75, ['lipatan', 'selangkangan', 'ketiak']],
+            'P1_SIKULUTUT' => [0.7, ['siku', 'lutut']],
+            'P1_WAJAH' => [0.6, ['wajah', 'muka', 'pipi', 'dahi', 'leher']],
+            'P1_BADAN' => [0.5, ['badan', 'punggung', 'lengan', 'perut', 'dada']],
+            'P1_KONTAK' => [0.7, ['bekas jam', 'kena kosmetik', 'setelah pakai']],
 
-            // Gejala G01-G20 sesuai Tabel 3.4 naskah skripsi (lima penyakit ruang lingkup).
-            'G01' => [0.6, ['merah', 'kemerahan']],
-            'G02' => [0.6, ['gatal', 'digaruk', 'garuk']],
-            'G03' => [0.6, ['bersisik', 'sisik', 'kasar', 'mengelupas', 'pecah pecah']],
-            'G04' => [0.5, ['lepuh', 'melepuh', 'bintil berair', 'gelembung']],
-            'G05' => [0.5, ['bengkak ringan', 'sedikit bengkak']],
-            'G06' => [0.8, ['melingkar', 'lingkar', 'cincin', 'kurap']],
-            'G07' => [0.7, ['tengah lebih bersih', 'tengah bersih', 'tengah normal']],
-            'G08' => [0.7, ['batas jelas', 'tepi jelas', 'pinggir jelas', 'tepi merah']],
-            'G09' => [0.7, ['sela jari', 'pecah-pecah kaki', 'sela jari kaki']],
-            'G10' => [0.7, ['lipatan paha', 'selangkangan']],
-            'G11' => [0.8, ['bercak putih', 'bercak cokelat', 'bercak coklat', 'panu']],
-            'G12' => [0.6, ['gatal berkeringat', 'gatal saat keringat', 'gatal setelah keringat', 'bertambah setelah berkeringat']],
-            'G13' => [0.7, ['kontak sabun', 'kontak kosmetik', 'kontak logam', 'kontak tanaman', 'setelah pakai', 'pemicu']],
-            'G14' => [0.5, ['perih', 'terbakar', 'pedih', 'menyengat']],
-            'G15' => [0.7, ['telapak kaki']],
-            'G16' => [0.5, ['di badan', 'pada badan', 'di lengan', 'pada lengan']],
-            'G17' => [0.4, ['nyeri ringan', 'sedikit nyeri']],
-            'G18' => [0.5, ['kulit kering', 'kering']],
-            'G19' => [0.6, ['melebar', 'meluas', 'bertambah luas']],
-            'G20' => [0.5, ['area yang terkena', 'area yang kena', 'hanya di area terpapar']],
+            'P2_CINCIN' => [0.85, ['melingkar', 'lingkar', 'cincin', 'kurap']],
+            'P2_PLAK' => [0.7, ['plak', 'menebal', 'tebal menonjol']],
+            'P2_DATAR' => [0.7, ['panu', 'bercak putih', 'bercak cokelat', 'bercak coklat']],
+            'P2_JERAWAT' => [0.8, ['jerawat', 'komedo', 'beruntusan']],
+            'P2_BENJOLAN' => [0.7, ['benjolan', 'tonjolan', 'mengkilap']],
+            'P2_BENTOL' => [0.85, ['biduran', 'bentol', 'hilang timbul', 'berpindah']],
+            'P2_GELEMBUNG' => [0.75, ['lepuh', 'melepuh', 'gelembung', 'bergerombol']],
+            'P2_KERAK' => [0.75, ['keropeng', 'krusta', 'berkerak', 'bernanah']],
+            'P2_MERAHLUAS' => [0.5, ['kemerahan', 'ruam', 'bercak merah']],
+
+            'P3_HALUS' => [0.6, ['bersisik', 'sisik halus']],
+            'P3_TEBAL' => [0.7, ['sisik tebal', 'keperakan', 'mengelupas berlapis']],
+            'P3_KERING' => [0.6, ['kulit kering', 'pecah pecah', 'pecah-pecah']],
+
+            'P4_GATAL' => [0.6, ['gatal', 'digaruk', 'garuk']],
+            'P4_NYERI' => [0.75, ['nyeri', 'menusuk', 'ngilu']],
+            'P4_PERIH' => [0.6, ['perih', 'pedih', 'terbakar', 'menyengat']],
+
+            'P5_JAM' => [0.7, ['hilang timbul', 'muncul hilang']],
+            'P5_HARI' => [0.5, ['beberapa hari', 'menyebar cepat', 'cepat menyebar']],
+            'P5_MINGGU' => [0.5, ['berminggu', 'beberapa minggu']],
+            'P5_BULAN' => [0.6, ['berbulan', 'beberapa bulan', 'tidak sembuh']],
+            'P5_TAHUN' => [0.6, ['bertahun', 'kambuh', 'berulang']],
+
+            'P6_SATUSISI' => [0.75, ['satu sisi', 'sebelah kiri saja', 'sebelah kanan saja']],
+
+            'P7_KONTAK' => [0.7, ['sabun', 'detergen', 'kosmetik', 'skincare', 'parfum', 'logam', 'tanaman', 'alergi']],
+            'P7_KERINGAT' => [0.7, ['berkeringat', 'keringat', 'lembap', 'lembab']],
+            'P7_OBAT' => [0.7, ['minum obat', 'setelah obat', 'obat baru']],
+
+            'P8_TENGAHBERSIH' => [0.8, ['tengah lebih bersih', 'tengah bersih', 'tengah normal']],
+            'P8_SATELIT' => [0.8, ['bintik kecil di sekitar', 'bintik satelit']],
+            'P8_KOMEDO' => [0.8, ['komedo']],
         ];
+
 
         $evidence = [];
 

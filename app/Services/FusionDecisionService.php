@@ -151,19 +151,32 @@ class FusionDecisionService
             );
         }
 
+        // Catatan ketidaksesuaian antarmodalitas harus tetap terbaca meskipun aksi
+        // ditentukan oleh golongan penyakit. Sebelumnya kedua cabang scope di bawah
+        // keluar lebih dulu tanpa menyebut kandidat visual sama sekali, sehingga
+        // temuan visual yang berbeda hilang dari penjelasan yang dilihat pengguna.
+        $catatanVisual = ($visualAvailable && $visualDisease && ! $visualDisease->is($textualDisease))
+            ? sprintf(
+                ' Catatan: analisis foto justru mengarah ke %s, sehingga hasil ini belum sesuai antarmodalitas dan sebaiknya dikonfirmasi tenaga kesehatan.',
+                $visualDisease->name_indonesian ?: $visualDisease->name
+            )
+            : '';
+
         if ($textualDisease->default_action === 'refer' && $action === 'refer') {
             return sprintf(
-                'Scope rujukan: kandidat %s berada di luar penanganan mandiri sehingga hasil skrining tidak disertai rekomendasi obat dan perlu diperiksa tenaga kesehatan (CF %s).',
+                'Scope rujukan: kandidat %s berada di luar penanganan mandiri sehingga hasil skrining tidak disertai rekomendasi obat dan perlu diperiksa tenaga kesehatan (CF %s).%s',
                 $diseaseName,
-                $cfPercent
+                $cfPercent,
+                $catatanVisual
             );
         }
 
         if ($textualDisease->default_action === 'educate_only' && $action === 'educate_only') {
             return sprintf(
-                'Scope edukasi: kandidat %s ditampilkan sebagai informasi awal berdasarkan data dan gejala, bukan diagnosis terkonfirmasi; sistem tidak memberikan rekomendasi obat (CF %s).',
+                'Scope edukasi: kandidat %s ditampilkan sebagai informasi awal berdasarkan data dan gejala, bukan diagnosis terkonfirmasi; sistem tidak memberikan rekomendasi obat (CF %s).%s',
                 $diseaseName,
-                $cfPercent
+                $cfPercent,
+                $catatanVisual
             );
         }
 

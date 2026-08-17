@@ -29,8 +29,8 @@ class ConsultationController extends Controller
         return Inertia::render('Consultation/Start', [
             'symptoms' => Symptom::query()
                 ->where('is_active', true)
-                ->orderBy('id')
-                ->get(['id', 'code', 'name', 'question']),
+                ->orderBy('display_order')
+                ->get(['id', 'code', 'name', 'question', 'question_group', 'question_text', 'option_label', 'option_explanation', 'display_order']),
             'redFlags' => RedFlag::query()
                 ->where('is_active', true)
                 ->orderBy('id')
@@ -124,6 +124,11 @@ class ConsultationController extends Controller
                 'code' => $symptom->code,
                 'name' => $symptom->name,
                 'question' => $symptom->question,
+                'question_group' => $symptom->question_group,
+                'question_text' => $symptom->question_text,
+                'option_label' => $symptom->option_label,
+                'option_explanation' => $symptom->option_explanation,
+                'display_order' => $symptom->display_order,
             ])->values(),
             'selected_red_flags' => $selectedRedFlags->map(fn (RedFlag $redFlag): array => [
                 'id' => $redFlag->id,

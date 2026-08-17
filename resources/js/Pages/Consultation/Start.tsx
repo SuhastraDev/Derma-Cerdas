@@ -22,6 +22,18 @@ type Symptom = {
     code: string;
     name: string;
     question: string;
+    question_group?: string | null;
+    question_text?: string | null;
+    option_label?: string | null;
+    option_explanation?: string | null;
+    display_order?: number;
+};
+
+/** Satu pertanyaan pilihan ganda beserta seluruh opsinya. */
+type QuestionGroup = {
+    group: string;
+    text: string;
+    options: Symptom[];
 };
 
 type RedFlag = {
@@ -173,14 +185,37 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     const selectedRedFlagCount = Object.values(data.red_flags).filter(Boolean).length;
     const answeredSymptomCount = answeredSymptoms.size;
     const answeredRedFlagCount = answeredRedFlags.size;
-    const currentSymptom = adaptiveSymptoms[symptomQuestionIndex];
+    // Bank pertanyaan berbentuk pilihan ganda: seluruh opsi dalam satu pertanyaan
+    // ditampilkan bersama, dan memilih satu opsi otomatis menihilkan opsi lain.
+    const questionGroups = useMemo<QuestionGroup[]>(() => {
+        const map = new Map<string, QuestionGroup>();
+
+        adaptiveSymptoms.forEach((symptom) => {
+            const group = symptom.question_group ?? symptom.code;
+
+            if (!map.has(group)) {
+                map.set(group, {
+                    group,
+                    text: symptom.question_text ?? symptom.question,
+                    options: [],
+                });
+            }
+
+            map.get(group)!.options.push(symptom);
+        });
+
+        return Array.from(map.values());
+    }, [adaptiveSymptoms]);
+
+    const totalQuestions = questionGroups.length;
+    const currentQuestion = questionGroups[symptomQuestionIndex];
     const currentRedFlag = orderedRedFlags[redFlagQuestionIndex];
     const canContinue =
         (currentStep === 0 && data.visitor_name.trim().length >= 2) ||
         (currentStep === 1 && data.consent) ||
         (currentStep === 2 && data.complaint_text.trim().length >= 12) ||
         (currentStep === 3 && data.image !== null) ||
-        (currentStep === 4 && answeredSymptomCount === adaptiveSymptoms.length && selectedSymptomCount > 0) ||
+        (currentStep === 4 && answeredSymptomCount === totalQuestions && totalQuestions > 0) ||
         (currentStep === 5 && answeredRedFlagCount === orderedRedFlags.length) ||
         currentStep >= 6;
 
@@ -189,7 +224,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         data.consent,
         data.complaint_text.trim().length >= 12,
         data.image !== null,
-        answeredSymptomCount === adaptiveSymptoms.length && selectedSymptomCount > 0,
+        answeredSymptomCount === totalQuestions && totalQuestions > 0,
         answeredRedFlagCount === orderedRedFlags.length,
         currentStep === 6,
     ];
@@ -299,6 +334,16 @@ export default function Start({ symptoms, redFlags }: StartProps) {
         }, 'image/jpeg', 0.9);
     };
 
+    /** Memilih satu opsi menihilkan seluruh opsi lain pada pertanyaan yang sama. */
+    const answerQuestion = (question: QuestionGroup, code: string) => {
+        const next = { ...data.symptoms };
+        question.options.forEach((option) => {
+            next[option.code] = option.code === code ? 1 : 0;
+        });
+        setData('symptoms', next);
+        setAnsweredSymptoms((answers) => new Set(answers).add(question.group));
+    };
+
     const answerSymptom = (code: string, value: number) => {
         setData('symptoms', {
             ...data.symptoms,
@@ -316,7 +361,7 @@ export default function Start({ symptoms, redFlags }: StartProps) {
     };
 
     const goToNextSymptom = () => {
-        setSymptomQuestionIndex((index) => Math.min(index + 1, adaptiveSymptoms.length - 1));
+        setSymptomQuestionIndex((index) => Math.min(index + 1, questionGroups.length - 1));
     };
 
     const goToNextRedFlag = () => {
@@ -643,80 +688,82 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                     </div>
                                 </div>
                             )}
-                            {currentSymptom && (
-                                <article key={currentSymptom.code} className="consultation-card-enter mt-6 overflow-hidden rounded-2xl border border-yellow-200 bg-yellow-50/70 shadow-sm">
-                                    <div className="border-b border-yellow-200 bg-white p-4">
+                            {currentQuestion && (
+                                <article key={currentQuestion.group} className="consultation-card-enter mt-6 overflow-hidden rounded-2xl border border-yellow-200 bg-yellow-50/70 shadow-sm">
+                                    <div className="border-b border-yellow-200 bg-white p-4 sm:p-5">
                                         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                                            <div>
-                                                <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">
-                                                    Pertanyaan gejala {symptomQuestionIndex + 1} dari {adaptiveSymptoms.length}
-                                                </p>
-                                                <h3 className="mt-1 text-xl font-semibold text-slate-950">
-                                                    {currentSymptom.name}
-                                                </h3>
-                                            </div>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">
+                                                Pertanyaan {symptomQuestionIndex + 1} dari {totalQuestions}
+                                            </p>
                                             <span className="w-fit rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-orange-800">
-                                                Terjawab {answeredSymptomCount}/{adaptiveSymptoms.length}
+                                                Terjawab {answeredSymptomCount}/{totalQuestions}
                                             </span>
                                         </div>
-                                        <div className="mt-4 h-2 rounded-full bg-slate-100">
+                                        <h3 className="mt-2 text-xl font-semibold leading-8 text-slate-950 sm:text-2xl">
+                                            {currentQuestion.text}
+                                        </h3>
+                                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
                                             <div
-                                                className="h-2 rounded-full bg-emerald-600 transition-all duration-300"
-                                                style={{ width: `${Math.round((answeredSymptomCount / Math.max(adaptiveSymptoms.length, 1)) * 100)}%` }}
+                                                className="h-2 rounded-full bg-emerald-600 transition-[width] duration-500 ease-out"
+                                                style={{ width: `${Math.round((answeredSymptomCount / Math.max(totalQuestions, 1)) * 100)}%` }}
                                             />
                                         </div>
                                     </div>
-                                    <div className="p-5">
-                                        <p className="text-lg font-semibold leading-7 text-slate-950">
-                                            {currentSymptom.question}
-                                        </p>
-                                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                                            {symptomGuide(currentSymptom.code)}
-                                        </p>
-                                        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                                            {symptomChoices.map((choice) => {
-                                                const active =
-                                                    answeredSymptoms.has(currentSymptom.code) &&
-                                                    (data.symptoms[currentSymptom.code] ?? 0) === choice.value;
+                                    <div className="p-4 sm:p-5">
+                                        <div className="grid gap-3 sm:grid-cols-2">
+                                            {currentQuestion.options.map((option, index) => {
+                                                const active = (data.symptoms[option.code] ?? 0) > 0;
 
                                                 return (
                                                     <button
-                                                        key={`${currentSymptom.code}-${choice.value}`}
+                                                        key={option.code}
                                                         type="button"
-                                                        onClick={() => answerSymptom(currentSymptom.code, choice.value)}
-                                                        className={`min-h-16 rounded-xl border px-3 text-left transition ${
+                                                        onClick={() => answerQuestion(currentQuestion, option.code)}
+                                                        style={{ animationDelay: `${index * 45}ms` }}
+                                                        className={`consultation-option-enter group flex min-h-[4.5rem] items-start gap-3 rounded-xl border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
                                                             active
-                                                                ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm'
-                                                                : 'border-slate-200 bg-white text-slate-700 hover:border-yellow-300 hover:bg-yellow-50'
+                                                                ? 'border-neutral-900 bg-neutral-900 text-white shadow-md'
+                                                                : 'border-slate-200 bg-white text-slate-800 hover:-translate-y-0.5 hover:border-yellow-300 hover:bg-yellow-50 hover:shadow-sm'
                                                         }`}
                                                     >
-                                                        <span className="block text-sm font-semibold">
-                                                            {choice.label}
+                                                        <span
+                                                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                                                                active ? 'border-white bg-white' : 'border-slate-300 group-hover:border-orange-400'
+                                                            }`}
+                                                        >
+                                                            {active && <span className="h-2.5 w-2.5 rounded-full bg-neutral-900" />}
                                                         </span>
-                                                        <span className={`mt-1 block text-xs ${active ? 'text-neutral-300' : 'text-slate-500'}`}>
-                                                            {choice.helper}
+                                                        <span className="min-w-0">
+                                                            <span className="block text-sm font-semibold leading-6 sm:text-base">
+                                                                {option.option_label ?? option.name}
+                                                            </span>
+                                                            {option.option_explanation && (
+                                                                <span className={`mt-1 block text-xs leading-5 sm:text-sm ${active ? 'text-neutral-300' : 'text-slate-500'}`}>
+                                                                    {option.option_explanation}
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </button>
                                                 );
                                             })}
                                         </div>
-                                        <div className="mt-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                                        <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                                             <button
                                                 type="button"
                                                 onClick={() => setSymptomQuestionIndex((index) => Math.max(index - 1, 0))}
                                                 disabled={symptomQuestionIndex === 0}
-                                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
                                                 <ArrowLeft className="h-4 w-4" />
-                                                Pertanyaan sebelumnya
+                                                Sebelumnya
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={goToNextSymptom}
-                                                disabled={!answeredSymptoms.has(currentSymptom.code) || symptomQuestionIndex === adaptiveSymptoms.length - 1}
-                                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                                disabled={!answeredSymptoms.has(currentQuestion.group) || symptomQuestionIndex === totalQuestions - 1}
+                                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
-                                                Pertanyaan berikutnya
+                                                Berikutnya
                                                 <ArrowRight className="h-4 w-4" />
                                             </button>
                                         </div>
@@ -724,7 +771,8 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                 </article>
                             )}
                             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                                Pilih “Tidak ada” jika gejala memang tidak dirasakan. Untuk melanjutkan tahap, semua pertanyaan adaptif perlu dijawab dan minimal satu gejala bernilai lebih dari “Tidak ada”.
+                                Pilih satu jawaban yang paling menggambarkan keluhan Anda. Bila ragu, pilih
+                                <span className="font-semibold"> Tidak yakin</span> &mdash; jawaban asal justru membuat hasil meleset.
                             </div>
                             {errors.symptoms && <ErrorText>{errors.symptoms}</ErrorText>}
                         </section>

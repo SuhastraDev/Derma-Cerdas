@@ -47,9 +47,9 @@ class AiVisualServiceTest extends TestCase
         $this->assertTrue($analysis['is_valid_skin_image']);
         $this->assertSame('valid', $analysis['validation_status']);
         $this->assertCount(1, $analysis['candidates']);
-        // Penyakit MVP ECZEMA sudah dipensiunkan (lihat DatabaseSeeder::retireLegacyMvpDiseases),
-        // sehingga kelas dataset 'Eczema' kini menunjuk grup klinis DERMATITIS_ECZEMA.
-        $this->assertTrue($analysis['candidates'][0]['disease']->is(Disease::query()->where('code', 'DERMATITIS_ECZEMA')->firstOrFail()));
+        // Eczema termasuk 15 kelas ruang lingkup, jadi kelas dataset 'Eczema'
+        // menunjuk penyakit ECZEMA itu sendiri.
+        $this->assertTrue($analysis['candidates'][0]['disease']->is(Disease::query()->where('code', 'ECZEMA')->firstOrFail()));
     }
 
     public function test_request_includes_linked_production_classes_outside_textual_top_eight(): void
@@ -58,19 +58,23 @@ class AiVisualServiceTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         config(['services.dermacerdas_ai.url' => 'http://dermacerdas-ai.test']);
 
+        // Melasma sengaja dipilih karena BUKAN salah satu dari 15 kelas ruang
+        // lingkup, sehingga benar-benar menguji kelas tertaut di luar peringkat teks.
         $disease = Disease::query()->where('code', 'ECZEMA')->firstOrFail();
-        DatasetClassMapping::query()->create([
-            'dataset_class_id' => 999,
-            'dataset_class_name' => 'Basal_Cell_Carcinoma',
-            'nama_indonesia' => 'Karsinoma sel basal',
-            'scope_category' => 'rujuk',
-            'boleh_rekomendasi_obat' => false,
-            'default_action' => 'refer',
-            'disease_id' => $disease->id,
-        ]);
+        DatasetClassMapping::query()->updateOrCreate(
+            ['dataset_class_name' => 'Melasma'],
+            [
+                'dataset_class_id' => 117,
+                'nama_indonesia' => 'Melasma',
+                'scope_category' => 'edukasi',
+                'boleh_rekomendasi_obat' => false,
+                'default_action' => 'educate_only',
+                'disease_id' => $disease->id,
+            ]
+        );
 
         Http::fake(function ($request) {
-            $this->assertContains('Basal_Cell_Carcinoma', $request['candidate_classes']);
+            $this->assertContains('Melasma', $request['candidate_classes']);
 
             return Http::response([
                 'provider' => 'nvidia',
@@ -94,26 +98,7 @@ class AiVisualServiceTest extends TestCase
         $this->seed(DatabaseSeeder::class);
         config(['services.dermacerdas_ai.url' => 'http://dermacerdas-ai.test']);
 
-        $disease = Disease::query()->create([
-            'code' => 'PSORIASIS_PAPULOSQUAMOUS_TEST',
-            'name' => 'Psoriasis test',
-            'slug' => 'psoriasis-papulosquamous-test',
-            'name_indonesian' => 'Psoriasis test',
-            'description' => 'Konteks test.',
-            'severity_scope' => 'moderate',
-            'default_action' => 'educate_only',
-            'is_active' => true,
-        ]);
-
-        DatasetClassMapping::query()->create([
-            'dataset_class_id' => 353,
-            'dataset_class_name' => 'Psoriasis',
-            'nama_indonesia' => 'Psoriasis',
-            'scope_category' => 'edukasi',
-            'boleh_rekomendasi_obat' => false,
-            'default_action' => 'educate_only',
-            'disease_id' => $disease->id,
-        ]);
+        // Psoriasis termasuk 15 kelas dan sudah diseed lengkap dengan pemetaannya.
 
         Http::fake(function ($request) {
             $this->assertSame('Saya menduga psoriasis dengan bercak merah bersisik.', $request['complaint_text']);
@@ -123,7 +108,7 @@ class AiVisualServiceTest extends TestCase
             return Http::response([
                 'provider' => 'nvidia',
                 'is_valid_skin_image' => true,
-                'suggested_symptom_codes' => ['G11', 'UNKNOWN'],
+                'suggested_symptom_codes' => ['P2_DATAR', 'UNKNOWN'],
                 'candidates' => [],
                 'warnings' => [],
                 'raw_response' => [],
@@ -141,7 +126,7 @@ class AiVisualServiceTest extends TestCase
             [['dataset_class_name' => 'Psoriasis']]
         );
 
-        $this->assertSame(['G11'], $analysis['suggested_symptom_codes']);
+        $this->assertSame(['P2_DATAR'], $analysis['suggested_symptom_codes']);
     }
 
     public function test_quota_exhaustion_is_reported_as_unavailable_instead_of_invalid_skin(): void

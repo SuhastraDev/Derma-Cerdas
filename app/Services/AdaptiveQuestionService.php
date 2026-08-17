@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Disease;
 use App\Models\Symptom;
+use App\Support\QuestionBank;
 use Illuminate\Support\Collection;
 
 class AdaptiveQuestionService
@@ -83,13 +84,69 @@ class AdaptiveQuestionService
                 ->values();
         }
 
-        $selectedCodes = $orderedCodes->take($max)->all();
+        return $this->selectByQuestionGroup($orderedCodes->all(), $complaintFeatures, $visualCandidates, $min, $max);
+    }
 
-        return Symptom::query()
+    /**
+     * Bank pertanyaan berbentuk pilihan ganda: satu pertanyaan hanya bermakna
+     * bila SELURUH pilihannya ikut ditampilkan. Skor per pilihan karenanya
+     * diangkat menjadi skor pertanyaan (nilai tertinggi di antara pilihannya),
+     * lalu pertanyaan yang terpilih dikembalikan lengkap beserta opsinya.
+     *
+     * Pertanyaan bertanda 'always' - lokasi dan bentuk - selalu diikutkan
+     * karena daya pisahnya jauh melampaui yang lain.
+     *
+     * @param  array<int, string>  $orderedCodes
+     * @param  array<string, mixed>  $complaintFeatures
+     * @param  array<int, array<string, mixed>>  $visualCandidates
+     * @return Collection<int, Symptom>
+     */
+    private function selectByQuestionGroup(
+        array $orderedCodes,
+        array $complaintFeatures,
+        array $visualCandidates,
+        int $min,
+        int $max
+    ): Collection {
+        $all = Symptom::query()
             ->where('is_active', true)
-            ->whereIn('code', $selectedCodes)
-            ->get(['id', 'code', 'name', 'question'])
-            ->sortBy(fn (Symptom $symptom): int => array_search($symptom->code, $selectedCodes, true))
+            ->whereNotNull('question_group')
+            ->orderBy('display_order')
+            ->get(['id', 'code', 'name', 'question', 'question_group', 'question_text', 'option_label', 'option_explanation', 'display_order']);
+
+        if ($all->isEmpty()) {
+            return collect();
+        }
+
+        $selalu = collect(QuestionBank::questions())
+            ->filter(fn (array $question): bool => $question['always'])
+            ->keys();
+
+        $peringkat = [];
+
+        foreach ($orderedCodes as $posisi => $code) {
+            $group = $all->firstWhere('code', $code)?->question_group;
+
+            if ($group !== null && ! isset($peringkat[$group])) {
+                $peringkat[$group] = $posisi;
+            }
+        }
+
+        $urutanGroup = $selalu
+            ->merge(collect($peringkat)->sort()->keys())
+            ->merge($all->pluck('question_group')->unique())
+            ->unique()
+            ->values();
+
+        $jumlahPertanyaan = max(2, min(6, (int) ceil($max / 2)));
+        $terpilih = $urutanGroup->take($jumlahPertanyaan);
+
+        return $all
+            ->filter(fn (Symptom $symptom): bool => $terpilih->contains($symptom->question_group))
+            ->sortBy([
+                fn (Symptom $a, Symptom $b): int => $terpilih->search($a->question_group) <=> $terpilih->search($b->question_group),
+                fn (Symptom $a, Symptom $b): int => $a->display_order <=> $b->display_order,
+            ])
             ->map(fn (Symptom $symptom): Symptom => $this->applyQuestionOverride(
                 $symptom,
                 $complaintFeatures,

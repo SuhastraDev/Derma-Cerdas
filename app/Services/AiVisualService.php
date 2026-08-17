@@ -40,6 +40,9 @@ class AiVisualService
                 'image_base64' => base64_encode(Storage::disk('public')->get($imagePath)),
                 'complaint_text' => $complaintText,
                 'candidate_classes' => $this->candidateClasses($textualRankings, $diseaseHints),
+                // Daftar dipatok: model tidak boleh menambahkan tebakan indeks visual
+                // (recall@1 3,5%) ke dalam ruang pilihannya.
+                'strict_candidates' => true,
                 'symptom_questions' => $this->symptomQuestions(),
             ];
 
@@ -155,17 +158,20 @@ class AiVisualService
             ->filter()
             ->values();
 
-        $productionClasses = DatasetClassMapping::query()
-            ->whereNotNull('disease_id')
+        // Hanya kelas dari penyakit AKTIF yang ditawarkan. Sebelumnya seluruh
+        // mapping ikut dikirim (159 kelas), dan itu terukur menghancurkan akurasi:
+        // 159 kelas menghasilkan 0/8 benar, sedangkan ruang kandidat yang sempit
+        // pada model dan citra yang sama menghasilkan 9/10.
+        $scopeClasses = DatasetClassMapping::query()
+            ->whereHas('disease', fn ($query) => $query->where('is_active', true))
             ->orderBy('dataset_class_id')
             ->pluck('dataset_class_name');
 
         return $hintClasses
             ->concat($textualClasses)
-            ->concat($productionClasses)
+            ->concat($scopeClasses)
             ->filter(fn ($className): bool => is_string($className) && trim($className) !== '')
             ->unique()
-            ->take(160)
             ->values()
             ->all();
     }

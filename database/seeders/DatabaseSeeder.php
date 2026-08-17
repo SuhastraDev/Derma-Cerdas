@@ -12,6 +12,7 @@ use App\Models\Setting;
 use App\Models\Symptom;
 use App\Models\User;
 use App\Support\DatasetDiseaseMapper;
+use App\Support\QuestionBank;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -33,10 +34,183 @@ class DatabaseSeeder extends Seeder
         $this->seedSettings();
         $this->seedDatasetMappings($diseases);
 
-        $naskahSymptoms = $this->seedNaskahSymptoms();
-        $this->seedNaskahRules($diseases, $naskahSymptoms);
-        $this->retireLegacyMvpDiseases();
+        $scopeDiseases = $this->seedScopeDiseases();
+        $options = $this->seedQuestionBank();
+        $this->seedQuestionRules($scopeDiseases, $options);
+        $this->retireOutOfScopeDiseases(array_keys($scopeDiseases));
         $this->deactivateOrphanedSymptoms();
+    }
+
+    /**
+     * 15 kelas ruang lingkup beserta pemetaannya ke kelas SD-198.
+     *
+     * @return array<string, Disease>
+     */
+    private function seedScopeDiseases(): array
+    {
+        $diseases = [];
+
+        foreach (QuestionBank::diseases() as $row) {
+            $disease = Disease::query()->updateOrCreate(
+                ['code' => $row['code']],
+                [
+                    'name' => $row['name'],
+                    'slug' => Str::slug($row['code']),
+                    'name_indonesian' => $row['name_indonesian'],
+                    'description' => $row['description'],
+                    'severity_scope' => $row['default_action'] === 'refer' ? 'moderate' : 'mild',
+                    'default_action' => $row['default_action'],
+                    'is_active' => true,
+                ],
+            );
+
+            DatasetClassMapping::query()->updateOrCreate(
+                ['dataset_class_name' => $row['dataset_class']],
+                [
+                    'dataset_class_id' => $row['dataset_class_id'],
+                    'nama_indonesia' => $row['name_indonesian'],
+                    'scope_category' => match ($row['default_action']) {
+                        'refer' => 'rujuk',
+                        'recommend_otc' => 'swamedikasi',
+                        default => 'edukasi',
+                    },
+                    'boleh_rekomendasi_obat' => $row['default_action'] === 'recommend_otc',
+                    'default_action' => $row['default_action'],
+                    'disease_id' => $disease->id,
+                ],
+            );
+
+            $diseases[$row['code']] = $disease;
+        }
+
+        return $diseases;
+    }
+
+    /**
+     * Setiap PILIHAN jawaban disimpan sebagai satu baris symptoms, sehingga
+     * CertaintyFactorService tidak perlu diubah: pilihan terpilih bernilai
+     * user_cf 1.0, sisanya 0.
+     *
+     * @return array<string, Symptom>
+     */
+    private function seedQuestionBank(): array
+    {
+        $options = [];
+
+        foreach (QuestionBank::questions() as $group => $question) {
+            $urutan = 0;
+
+            foreach ($question['options'] as $code => [$label, $explanation]) {
+                $urutan++;
+                $options[$code] = Symptom::query()->updateOrCreate(
+                    ['code' => $code],
+                    [
+                        'name' => $label,
+                        'question' => $question['text'],
+                        'question_group' => $group,
+                        'question_text' => $question['text'],
+                        'option_label' => $label,
+                        'option_explanation' => $explanation,
+                        'display_order' => $question['order'] * 100 + $urutan,
+                        'input_type' => 'choice',
+                        'is_red_flag_candidate' => false,
+                        'is_active' => true,
+                    ],
+                );
+            }
+        }
+
+        return $options;
+    }
+
+    /**
+     * Matriks CF pakar untuk bank pertanyaan baru.
+     *
+     * is_required sengaja tidak dipakai sama sekali. Gerbang "wajib" pada bank
+     * lama memaksa CF menjadi nol begitu satu gejala tidak terjawab, sehingga
+     * penyakit dengan banyak gejala wajib nyaris mustahil menang melawan
+     * penyakit tanpa gejala wajib. Pada pilihan ganda gerbang itu tidak
+     * diperlukan: memilih satu lokasi otomatis menihilkan lokasi lainnya.
+     *
+     * @param  array<string, Disease>  $diseases
+     * @param  array<string, Symptom>  $options
+     */
+    private function seedQuestionRules(array $diseases, array $options): void
+    {
+        foreach (QuestionBank::matrix() as $diseaseCode => $optionCfs) {
+            $disease = $diseases[$diseaseCode] ?? null;
+
+            if (! $disease) {
+                continue;
+            }
+
+            DiseaseSymptomRule::query()
+                ->where('disease_id', $disease->id)
+                ->whereNotIn('symptom_id', collect($options)->pluck('id')->all())
+                ->delete();
+
+            foreach ($optionCfs as $optionCode => $cf) {
+                $option = $options[$optionCode] ?? null;
+
+                if (! $option) {
+                    continue;
+                }
+
+                [$mb, $md] = QuestionBank::beliefPair($cf);
+
+                DiseaseSymptomRule::query()->updateOrCreate(
+                    ['disease_id' => $disease->id, 'symptom_id' => $option->id],
+                    [
+                        'mb' => $mb,
+                        'md' => $md,
+                        'expert_cf' => round($mb - $md, 2),
+                        'is_required' => false,
+                        'note' => 'Bank pertanyaan pilihan ganda 15 kelas; pengodean 0,80/0,60/0,40/0,20.',
+                    ],
+                );
+            }
+        }
+    }
+
+    /**
+     * Penyakit di luar 15 kelas ruang lingkup dinonaktifkan dan aturan gejalanya
+     * dicabut, agar hanya kelas yang basis pengetahuannya disusun yang ikut
+     * dinilai. Kelas dataset miliknya dialihkan ke grup klinis yang benar.
+     *
+     * @param  array<int, string>  $scopeCodes
+     */
+    private function retireOutOfScopeDiseases(array $scopeCodes): void
+    {
+        $ids = Disease::query()->whereNotIn('code', $scopeCodes)->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        DiseaseSymptomRule::query()->whereIn('disease_id', $ids)->delete();
+
+        DatasetClassMapping::query()
+            ->whereIn('disease_id', $ids)
+            ->get()
+            ->each(function (DatasetClassMapping $mapping): void {
+                try {
+                    $payload = DatasetDiseaseMapper::payloadFor($mapping->dataset_class_name);
+                } catch (\InvalidArgumentException) {
+                    return;
+                }
+
+                $group = Disease::query()->firstOrNew(['code' => $payload['disease']['code']]);
+                $group->fill($payload['disease'])->save();
+
+                $mapping->fill($payload['mapping']);
+                $mapping->disease_id = $group->id;
+                $mapping->save();
+            });
+
+        Disease::query()
+            ->whereIn('id', $ids)
+            ->whereNotIn('code', $scopeCodes)
+            ->update(['is_active' => false]);
     }
 
     /**

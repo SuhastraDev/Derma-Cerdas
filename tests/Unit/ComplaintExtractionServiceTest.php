@@ -43,8 +43,8 @@ class ComplaintExtractionServiceTest extends TestCase
         $hints = collect($features['disease_hints']);
 
         $this->assertTrue($hints->contains(fn (array $hint): bool => $hint['dataset_class_name'] === 'Psoriasis'));
-        $this->assertContains('RED_RASH', array_keys($features['symptom_evidence']));
-        $this->assertContains('DRY_SCALY_SKIN', array_keys($features['symptom_evidence']));
+        $this->assertContains('P2_MERAHLUAS', array_keys($features['symptom_evidence']));
+        $this->assertContains('P3_HALUS', array_keys($features['symptom_evidence']));
     }
 
     /**
@@ -71,11 +71,11 @@ class ComplaintExtractionServiceTest extends TestCase
     public static function substringFalsePositives(): array
     {
         return [
-            'berkeringat bukan kulit kering' => ['gatal bertambah setelah berkeringat', 'DRY_SCALY_SKIN'],
-            'keringat bukan kulit kering' => ['badan penuh keringat sepanjang hari', 'G18'],
-            'kulit putih bukan bercak panu' => ['kulit putih saya muncul ruam merah', 'WHITE_BROWN_PATCHES'],
-            'panas tinggi bukan sensasi terbakar' => ['demam dan panas tinggi sejak kemarin', 'BURNING_STINGING'],
-            'gatal di kaki bukan kutu air' => ['ada ruam gatal di kaki kanan', 'FOOT_SCALING'],
+            'berkeringat bukan kulit kering' => ['gatal bertambah setelah berkeringat', 'P3_KERING'],
+            'keringat bukan kulit kering' => ['badan penuh keringat sepanjang hari', 'P3_KERING'],
+            'kulit putih bukan bercak panu' => ['kulit putih saya muncul ruam merah', 'P2_DATAR'],
+            'panas tinggi bukan sensasi terbakar' => ['demam dan panas tinggi sejak kemarin', 'P4_PERIH'],
+            'gatal di kaki bukan kutu air' => ['ada ruam gatal di kaki kanan', 'P1_KAKI'],
         ];
     }
 
@@ -83,8 +83,8 @@ class ComplaintExtractionServiceTest extends TestCase
     {
         $features = (new ComplaintExtractionService())->extract('kulit saya bersisik dan digaruk terus');
 
-        $this->assertContains('DRY_SCALY_SKIN', array_keys($features['symptom_evidence']));
-        $this->assertContains('ITCHING', array_keys($features['symptom_evidence']));
+        $this->assertContains('P3_HALUS', array_keys($features['symptom_evidence']));
+        $this->assertContains('P4_GATAL', array_keys($features['symptom_evidence']));
     }
 
     public function test_negation_only_applies_when_every_mention_is_negated(): void
@@ -92,11 +92,11 @@ class ComplaintExtractionServiceTest extends TestCase
         $service = new ComplaintExtractionService();
 
         $stillNegated = $service->extract('sama sekali tidak gatal, hanya kemerahan');
-        $this->assertNotContains('ITCHING', array_keys($stillNegated['symptom_evidence']));
+        $this->assertNotContains('P4_GATAL', array_keys($stillNegated['symptom_evidence']));
 
         // Sebelumnya hanya kemunculan pertama yang diperiksa, sehingga kalimat
         // ini salah disimpulkan sebagai tidak gatal.
         $laterMentionCounts = $service->extract('awalnya tidak gatal, sekarang gatal sekali');
-        $this->assertContains('ITCHING', array_keys($laterMentionCounts['symptom_evidence']));
+        $this->assertContains('P4_GATAL', array_keys($laterMentionCounts['symptom_evidence']));
     }
 }

@@ -46,13 +46,13 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'G01' => 0.6, // kulit kemerahan
-                'G02' => 0.6, // gatal
-                'G03' => 0.8, // kulit bersisik (wajib)
-                'G06' => 0.8, // lesi berbentuk cincin (wajib)
-                'G07' => 0.8, // bagian tengah lesi tampak lebih bersih (wajib)
-                'G08' => 0.8, // batas lesi terlihat jelas (wajib)
-                'G19' => 0.8, // lesi bertambah luas secara perlahan (wajib)
+                'P1_BADAN' => 1.0, // lokasi: badan
+                'P4_GATAL' => 1.0, // rasa: gatal
+                'P3_HALUS' => 1.0, // sisik halus
+                'P2_CINCIN' => 1.0, // bentuk melingkar
+                'P8_TENGAHBERSIH' => 1.0, // tengah lebih bersih
+                'P5_MINGGU' => 1.0, // beberapa minggu
+                'P7_KERINGAT' => 1.0, // memburuk saat berkeringat
             ]),
             'red_flags' => $this->redFlags([]),
         ];
@@ -64,7 +64,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertSame('completed', $consultation->refresh()->status);
         $this->assertSame('Indra Suhastra', $consultation->visitor_name);
-        $this->assertNotEmpty($consultation->complaint_features['symptom_evidence']['G06'] ?? []);
+        $this->assertNotEmpty($consultation->complaint_features['symptom_evidence']['P2_CINCIN'] ?? []);
         $this->assertSame('recommend_otc', $consultation->final_action);
         $this->assertDatabaseCount('consultation_symptoms', Symptom::query()->where('is_active', true)->count());
         $this->assertDatabaseCount('consultation_red_flags', RedFlag::query()->count());
@@ -98,7 +98,7 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertLessThan(Symptom::query()->where('is_active', true)->count(), $codes->count());
         $this->assertGreaterThanOrEqual(5, $codes->count());
-        $this->assertContains('G06', $codes);
+        $this->assertContains('P2_CINCIN', $codes);
 
         $this->assertLessThan(RedFlag::query()->where('is_active', true)->count(), count($response->json('selected_red_flags')));
         $this->assertGreaterThanOrEqual(4, count($response->json('selected_red_flags')));
@@ -142,10 +142,9 @@ class ConsultationFlowTest extends TestCase
 
         $questions = collect($response->json('selected_symptoms'));
 
-        $this->assertContains('G03', $questions->pluck('code'));
-        $this->assertTrue($questions->pluck('question')->contains(
-            fn (string $question): bool => str_contains($question, 'sisik putih') || str_contains($question, 'plak')
-        ));
+        $this->assertContains('P2_PLAK', $questions->pluck('code'));
+        // Pertanyaan sisik-lah yang memisahkan psoriasis dari eksim dan panu.
+        $this->assertContains('P3_TEBAL', $questions->pluck('code'));
         $this->assertLessThan(RedFlag::query()->where('is_active', true)->count(), count($response->json('selected_red_flags')));
     }
 
@@ -180,8 +179,8 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'DRY_SCALY_SKIN' => 0.8,
-                'G03' => 0.8,
+                'P3_TEBAL' => 1.0,
+                'P2_PLAK' => 1.0,
             ]),
             'red_flags' => $this->redFlags([]),
         ])->assertRedirect();
@@ -190,51 +189,6 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertSame($psoriasis->id, $finalResult->disease_id);
         $this->assertSame('F09', $finalResult->fusion_rule_code);
-        $this->assertSame('educate_only', $finalResult->action);
-        $this->assertSame([], $finalResult->recommendations_snapshot);
-    }
-
-    public function test_context_symptom_aligned_psoriasis_is_not_forced_into_generic_otc_class(): void
-    {
-        Storage::fake('public');
-        $this->seed(DatabaseSeeder::class);
-        $psoriasis = $this->createPsoriasisDisease();
-
-        $this->mock(AiVisualService::class, function ($mock): void {
-            $mock->shouldReceive('analyze')
-                ->once()
-                ->andReturn([
-                    'provider' => 'dermacerdas_ai',
-                    'provider_status' => 'ok',
-                    'is_valid_skin_image' => true,
-                    'validation_status' => 'valid',
-                    'candidates' => [],
-                    'suggested_symptom_codes' => [],
-                    'warnings' => ['Foto kulit valid, tetapi kandidat visual belum cukup yakin.'],
-                    'raw_response' => [],
-                ]);
-        });
-
-        $this->post(route('consultation.store'), [
-            'visitor_name' => 'Pengguna Psoriasis',
-            'complaint_text' => 'Saya menduga psoriasis, bercak merah tebal dan bersisik di lengan sejak beberapa minggu.',
-            'consent' => '1',
-            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
-            'symptoms' => $this->symptoms([
-                'G03' => 0.8,
-                'DRY_SCALY_SKIN' => 0.8,
-                'G08' => 0.6,
-                'G01' => 0.6,
-                'G16' => 0.6,
-                'RECURRENT_OR_DAYS' => 0.6,
-            ]),
-            'red_flags' => $this->redFlags([]),
-        ])->assertRedirect();
-
-        $finalResult = ConsultationFinalResult::query()->firstOrFail();
-
-        $this->assertSame($psoriasis->id, $finalResult->disease_id);
-        $this->assertSame('F10', $finalResult->fusion_rule_code);
         $this->assertSame('educate_only', $finalResult->action);
         $this->assertSame([], $finalResult->recommendations_snapshot);
     }
@@ -252,8 +206,8 @@ class ConsultationFlowTest extends TestCase
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
                 'WHEALS_COME_GO' => 1.0,
-                'ITCHING' => 0.8,
-                'RED_RASH' => 0.6,
+                'P4_GATAL' => 1.0,
+                'P2_MERAHLUAS' => 1.0,
             ]),
             'red_flags' => $this->redFlags([
                 'BREATHING_OR_FACE_SWELLING' => true,
@@ -293,8 +247,8 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('random.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'ITCHING' => 0.8,
-                'RED_RASH' => 0.6,
+                'P4_GATAL' => 1.0,
+                'P2_MERAHLUAS' => 1.0,
             ]),
             'red_flags' => $this->redFlags([]),
         ])->assertSessionHasErrors('image');
@@ -360,7 +314,7 @@ class ConsultationFlowTest extends TestCase
             'symptoms' => $this->symptoms([
                 'RING_SHAPED_EDGE' => 0.8,
                 'ITCHING' => 0.6,
-                'RED_RASH' => 0.6,
+                'P2_MERAHLUAS' => 1.0,
             ]),
             'red_flags' => $this->redFlags([]),
         ]);
@@ -389,8 +343,8 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'ITCHING' => 0.8,
-                'RED_RASH' => 0.6,
+                'P4_GATAL' => 1.0,
+                'P2_MERAHLUAS' => 1.0,
             ]),
             'red_flags' => $this->redFlags([]),
         ])->assertSessionHasErrors('image');
@@ -571,41 +525,33 @@ class ConsultationFlowTest extends TestCase
             'complaint_text' => 'Kulit saya gatal dan kemerahan di bagian lengan.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
-            'symptoms' => $this->symptoms(['G01' => 1.0, 'G02' => 1.0]),
+            'symptoms' => $this->symptoms(['P4_GATAL' => 1.0, 'P2_MERAHLUAS' => 1.0]),
             'red_flags' => $this->redFlags([]),
         ])->assertRedirect();
 
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
 
-        $this->assertSame($psoriasis->id, $finalResult->disease_id);
-        $this->assertSame('F08', $finalResult->fusion_rule_code);
-        $this->assertSame('educate_only', $finalResult->action);
+        // Psoriasis kini punya basis gejala/CF sendiri, sehingga F08 (khusus
+        // kandidat visual TANPA basis pengetahuan) tidak lagi berlaku. Jalur yang
+        // benar adalah F05: hasil visual dan gejala tidak sepakat sementara CFt
+        // belum tinggi, jadi safety-net menahan rekomendasi dan merujuk.
+        // Jawaban gejala yang diberikan cukup kuat (CFt >= 0,60), sehingga aturan
+        // yang berlaku F04: keputusan disandarkan pada gejala, TETAPI ketidaksesuaian
+        // dengan hasil visual wajib dinyatakan - bukan dibuang diam-diam seperti
+        // sebelumnya. Penahanan mutlak hanya untuk kandidat visual bergolongan rujuk.
+        $this->assertSame('F04', $finalResult->fusion_rule_code);
+        $this->assertStringContainsString('Psoriasis', $finalResult->explanation);
+        $this->assertDatabaseHas('consultation_visual_results', ['disease_id' => $psoriasis->id]);
         $this->assertSame([], $finalResult->recommendations_snapshot);
     }
 
+    /**
+     * Psoriasis kini termasuk 15 kelas ruang lingkup dan sudah diseed lengkap
+     * dengan pemetaan dataset serta profil Certainty Factor-nya, sehingga tidak
+     * perlu - dan tidak boleh - dibuat ulang di sini.
+     */
     private function createPsoriasisDisease(): Disease
     {
-        $psoriasis = Disease::query()->create([
-            'code' => 'PSORIASIS_PAPULOSQUAMOUS',
-            'name' => 'Psoriasis and papulosquamous disorders',
-            'slug' => 'psoriasis-papulosquamous',
-            'name_indonesian' => 'Psoriasis dan gangguan papuloskuamosa',
-            'description' => 'Edukasi psoriasis.',
-            'severity_scope' => 'moderate',
-            'default_action' => 'educate_only',
-            'is_active' => true,
-        ]);
-
-        DatasetClassMapping::query()->create([
-            'dataset_class_id' => 353,
-            'dataset_class_name' => 'Psoriasis',
-            'nama_indonesia' => 'Psoriasis',
-            'scope_category' => 'edukasi',
-            'boleh_rekomendasi_obat' => false,
-            'default_action' => 'educate_only',
-            'disease_id' => $psoriasis->id,
-        ]);
-
-        return $psoriasis;
+        return Disease::query()->where('code', 'PSORIASIS')->firstOrFail();
     }
 }
