@@ -38,8 +38,8 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "DermaCerdas AI Service")
     app_env: str = os.getenv("APP_ENV", "local")
     ai_mock_mode: bool = os.getenv("AI_MOCK_MODE", "true").lower() in {"1", "true", "yes", "on"}
-    groq_api_key: str | None = os.getenv("GROQ_API_KEY") or None
-    groq_model_name: str = os.getenv("GROQ_MODEL_NAME", "qwen/qwen3.6-27b")
+    cerebras_api_key: str | None = os.getenv("CEREBRAS_API_KEY") or None
+    cerebras_model_name: str = os.getenv("CEREBRAS_MODEL_NAME", "gemma-4-31b")
     max_image_size_mb: int = int(os.getenv("MAX_IMAGE_SIZE_MB", "5"))
     allowed_image_mime_types: tuple[str, ...] = tuple(
         item.strip()

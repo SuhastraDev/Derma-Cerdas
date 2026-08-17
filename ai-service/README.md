@@ -1,6 +1,6 @@
 # DermaCerdas AI Service
 
-FastAPI service untuk Phase 5 DermaCerdas. Service ini menangani validasi gambar, analisis visual via Groq (model vision `qwen/qwen3.6-27b`), parsing kandidat penyakit, dan mapping kandidat visual ke class SD-198 / disease lokal.
+FastAPI service untuk Phase 5 DermaCerdas. Service ini menangani validasi gambar, analisis visual via Cerebras (model vision `gemma-4-31b`), parsing kandidat penyakit, dan mapping kandidat visual ke class SD-198 / disease lokal.
 
 ## Menjalankan Lokal
 
@@ -13,7 +13,7 @@ copy .env.example .env
 uvicorn app.main:app --reload --port 8001
 ```
 
-Default `AI_MOCK_MODE=true`, jadi endpoint `/analyze-image` bisa dites tanpa API key. Untuk Groq asli, isi `GROQ_API_KEY` (dari [console.groq.com](https://console.groq.com)) dan set `AI_MOCK_MODE=false`.
+Default `AI_MOCK_MODE=true`, jadi endpoint `/analyze-image` bisa dites tanpa API key. Untuk Cerebras asli, isi `CEREBRAS_API_KEY` (dari [cloud.cerebras.ai](https://cloud.cerebras.ai)) dan set `AI_MOCK_MODE=false`.
 
 ## Endpoint
 

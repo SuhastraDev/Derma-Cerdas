@@ -49,7 +49,7 @@ class AssessRedFlagsRequest(BaseModel):
 
 
 class AssessRedFlagsResponse(BaseModel):
-    provider: str = "groq"
+    provider: str = "cerebras"
     provider_status: str = "ok"
     detected_codes: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

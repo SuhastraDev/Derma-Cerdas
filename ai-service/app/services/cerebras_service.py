@@ -15,16 +15,16 @@ from app.schemas import VisualCandidate
 from app.services.class_mapping import allowed_candidate_classes, normalize_class_name, resolve_mapping
 from app.services.image_validation import ImageValidator
 
-GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
+CEREBRAS_CHAT_COMPLETIONS_URL = "https://api.cerebras.ai/v1/chat/completions"
 
 # Vision token cost scales with image size. A skin lesion photo does not need
-# more than this to stay legible, and keeping requests smaller helps avoid
-# Groq's per-minute token rate limit.
-GROQ_MAX_IMAGE_DIMENSION = 768
+# more than this to stay legible, and keeping requests smaller helps stay
+# comfortably inside Cerebras's per-minute token rate limit.
+CEREBRAS_MAX_IMAGE_DIMENSION = 768
 
 
-class GroqVisualClient:
-    provider = "groq"
+class CerebrasVisualClient:
+    provider = "cerebras"
 
     def analyze(
         self,
@@ -34,10 +34,10 @@ class GroqVisualClient:
     ) -> dict[str, Any]:
         classes = allowed_candidate_classes(candidate_classes)
 
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not settings.cerebras_api_key:
             return self.mock_response(classes)
 
-        return self.groq_response(image_base64, classes, dataset_matches or [])
+        return self.cerebras_response(image_base64, classes, dataset_matches or [])
 
     def assess_red_flags(self, complaint_text: str, red_flags: list[dict[str, str]]) -> dict[str, Any]:
         """Text-only pass over the free-text complaint to flag danger signs the
@@ -47,7 +47,7 @@ class GroqVisualClient:
         if not red_flags:
             return {"provider_status": "ok", "detected_codes": [], "warnings": [], "raw_response": {}}
 
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not settings.cerebras_api_key:
             return {
                 "provider_status": "mock_mode",
                 "detected_codes": [],
@@ -58,7 +58,7 @@ class GroqVisualClient:
         try:
             body = self.text_chat_completion(self.red_flag_prompt(complaint_text, red_flags))
         except Exception as exc:
-            return self.provider_error_response(exc, "Groq red flag assessment")
+            return self.provider_error_response(exc, "Cerebras red flag assessment")
 
         text = self.completion_text(body)
         parsed = self.parse_json_text(text)
@@ -72,7 +72,7 @@ class GroqVisualClient:
             "provider_status": "ok",
             "detected_codes": detected_codes,
             "warnings": parsed.get("warnings", []),
-            "raw_response": {"text": text, "model": settings.groq_model_name},
+            "raw_response": {"text": text, "model": settings.cerebras_model_name},
         }
 
     def red_flag_prompt(self, complaint_text: str, red_flags: list[dict[str, str]]) -> str:
@@ -96,9 +96,8 @@ class GroqVisualClient:
     def text_chat_completion(self, prompt: str) -> dict[str, Any]:
         return self.post_with_retry(
             {
-                "model": settings.groq_model_name,
+                "model": settings.cerebras_model_name,
                 "temperature": 0.1,
-                "reasoning_effort": "none",
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=15.0,
@@ -115,7 +114,7 @@ class GroqVisualClient:
             "raw_response": {"mode": "mock"},
         }
 
-    def groq_response(
+    def cerebras_response(
         self,
         image_base64: str,
         classes: list[str],
@@ -127,14 +126,14 @@ class GroqVisualClient:
         try:
             body = self.chat_completion(prompt, data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Groq API")
+            return self.provider_error_response(exc, "Cerebras API")
 
         text = self.completion_text(body)
 
         return self.response_from_text(text)
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
-        if settings.ai_mock_mode or not settings.groq_api_key:
+        if settings.ai_mock_mode or not settings.cerebras_api_key:
             return {
                 "provider_status": "mock_mode",
                 "is_valid_skin_image": False,
@@ -147,7 +146,7 @@ class GroqVisualClient:
         try:
             body = self.chat_completion(self.skin_filter_prompt(), data_url)
         except Exception as exc:
-            return self.provider_error_response(exc, "Groq skin filter")
+            return self.provider_error_response(exc, "Cerebras skin filter")
 
         text = self.completion_text(body)
 
@@ -164,8 +163,8 @@ class GroqVisualClient:
             with Image.open(BytesIO(raw)) as image:
                 image = ImageOps.exif_transpose(image) or image
 
-                if max(image.size) > GROQ_MAX_IMAGE_DIMENSION:
-                    image.thumbnail((GROQ_MAX_IMAGE_DIMENSION, GROQ_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
+                if max(image.size) > CEREBRAS_MAX_IMAGE_DIMENSION:
+                    image.thumbnail((CEREBRAS_MAX_IMAGE_DIMENSION, CEREBRAS_MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
 
                 buffer = BytesIO()
                 image.convert("RGB").save(buffer, format="JPEG", quality=85)
@@ -177,13 +176,8 @@ class GroqVisualClient:
     def chat_completion(self, prompt: str, image_data_url: str) -> dict[str, Any]:
         return self.post_with_retry(
             {
-                "model": settings.groq_model_name,
+                "model": settings.cerebras_model_name,
                 "temperature": 0.2,
-                # Qwen3's chain-of-thought reasoning burns hundreds to thousands of
-                # extra completion tokens per call and isn't needed for this
-                # classification task; disabling it keeps calls well inside Groq's
-                # per-minute token budget and avoids <think> blocks breaking JSON parsing.
-                "reasoning_effort": "none",
                 "messages": [
                     {
                         "role": "user",
@@ -198,21 +192,20 @@ class GroqVisualClient:
         )
 
     def post_with_retry(self, json_body: dict[str, Any], timeout: float) -> dict[str, Any]:
-        """Retry once on Groq-side transient errors (rate limit / over capacity /
-        5xx), per Groq's own guidance to back off and retry. Client errors (4xx
-        other than 429) are not retried - retrying a malformed request just
-        wastes token budget for the same failure. Kept to 2 attempts with a
-        short per-attempt timeout so the combined wait stays comfortably under
-        Laravel's DERMACERDAS_AI_TIMEOUT, even if an attempt genuinely hangs
-        rather than fast-failing with a 503."""
+        """Retry once on Cerebras-side transient errors (rate limit / 5xx).
+        Client errors (4xx other than 429) are not retried - retrying a
+        malformed request just wastes token budget for the same failure. Kept
+        to 2 attempts with a short per-attempt timeout so the combined wait
+        stays comfortably under Laravel's DERMACERDAS_AI_TIMEOUT, even if an
+        attempt genuinely hangs rather than fast-failing."""
         attempts = 2
         backoff_seconds = 2.0
 
         for attempt in range(1, attempts + 1):
             response = httpx.post(
-                GROQ_CHAT_COMPLETIONS_URL,
+                CEREBRAS_CHAT_COMPLETIONS_URL,
                 headers={
-                    "Authorization": f"Bearer {settings.groq_api_key}",
+                    "Authorization": f"Bearer {settings.cerebras_api_key}",
                     "Content-Type": "application/json",
                 },
                 json=json_body,
@@ -251,7 +244,7 @@ class GroqVisualClient:
         )
         provider_status = "quota_exceeded" if quota_exceeded else "unavailable"
         warning = (
-            "Kuota/limit Groq API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan limit aktif."
+            "Kuota/limit Cerebras API telah habis. Tunggu kuota tersedia kembali atau gunakan API key dengan limit aktif."
             if quota_exceeded
             else f"{operation} sedang tidak tersedia. Coba kembali beberapa saat lagi."
         )
@@ -264,7 +257,7 @@ class GroqVisualClient:
             "raw_response": {
                 "error": error,
                 "error_code": provider_status,
-                "model": settings.groq_model_name,
+                "model": settings.cerebras_model_name,
             },
         }
 
@@ -294,7 +287,7 @@ class GroqVisualClient:
             "warnings": parsed.get("warnings", []),
             "raw_response": {
                 "text": text,
-                "model": settings.groq_model_name,
+                "model": settings.cerebras_model_name,
                 "skin_evidence_score": skin_evidence_score,
             },
         }
@@ -364,7 +357,7 @@ class GroqVisualClient:
     def skin_filter_response_from_text(self, text: str) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
         parse_failed = any(
-            warning.startswith("Respons Groq")
+            warning.startswith("Respons Cerebras")
             for warning in parsed.get("warnings", [])
         )
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
@@ -382,7 +375,7 @@ class GroqVisualClient:
         warnings = parsed.get("warnings", [])
 
         if parse_failed and text_signal is not None:
-            warnings = ["Respons Groq skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
+            warnings = ["Respons Cerebras skin filter tidak JSON valid, tetapi sinyal teks tetap terbaca."]
 
         return {
             "provider_status": "ok",
@@ -390,7 +383,7 @@ class GroqVisualClient:
             "warnings": warnings,
             "raw_response": {
                 "text": text,
-                "model": settings.groq_model_name,
+                "model": settings.cerebras_model_name,
                 "skin_evidence_score": skin_evidence_score,
                 "contains_human_body_part": parsed.get("contains_human_body_part"),
                 "contains_visible_skin": parsed.get("contains_visible_skin"),
@@ -448,8 +441,8 @@ class GroqVisualClient:
         return None
 
     def parse_json_text(self, text: str) -> dict[str, Any]:
-        # Reasoning models such as Qwen may prefix the answer with a
-        # <think>...</think> block before the actual JSON payload.
+        # Reasoning models may prefix the answer with a <think>...</think>
+        # block before the actual JSON payload.
         cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
 
         fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
@@ -466,14 +459,14 @@ class GroqVisualClient:
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Groq tidak berbentuk JSON valid."],
+                "warnings": ["Respons Cerebras tidak berbentuk JSON valid."],
             }
 
         if not isinstance(data, dict):
             return {
                 "is_valid_skin_image": False,
                 "candidates": [],
-                "warnings": ["Respons Groq tidak sesuai struktur yang diminta."],
+                "warnings": ["Respons Cerebras tidak sesuai struktur yang diminta."],
             }
 
         return data
@@ -550,7 +543,7 @@ def normalize_candidates(
                 dataset_class_name=mapping.dataset_class_name if mapping else canonical_name,
                 local_disease_code=mapping.local_disease_code if mapping else None,
                 visual_score=round(score, 4),
-                reason=str(raw.get("reason") or "Kandidat visual dari Groq."),
+                reason=str(raw.get("reason") or "Kandidat visual dari Cerebras."),
             )
         )
 

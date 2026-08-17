@@ -24,7 +24,7 @@ class AiVisualServiceTest extends TestCase
 
         Http::fake([
             'dermacerdas-ai.test/analyze-image' => Http::response([
-                'provider' => 'groq',
+                'provider' => 'cerebras',
                 'is_valid_skin_image' => false,
                 'candidates' => [
                     [
@@ -34,7 +34,7 @@ class AiVisualServiceTest extends TestCase
                     ],
                 ],
                 'warnings' => ['Foto agak buram.'],
-                'raw_response' => ['model' => 'groq-test'],
+                'raw_response' => ['model' => 'cerebras-test'],
             ]),
         ]);
 
@@ -71,7 +71,7 @@ class AiVisualServiceTest extends TestCase
             $this->assertContains('Basal_Cell_Carcinoma', $request['candidate_classes']);
 
             return Http::response([
-                'provider' => 'groq',
+                'provider' => 'cerebras',
                 'is_valid_skin_image' => true,
                 'candidates' => [],
                 'warnings' => [],
@@ -93,11 +93,11 @@ class AiVisualServiceTest extends TestCase
 
         Http::fake([
             'dermacerdas-ai.test/analyze-image' => Http::response([
-                'provider' => 'groq',
+                'provider' => 'cerebras',
                 'provider_status' => 'quota_exceeded',
                 'is_valid_skin_image' => false,
                 'candidates' => [],
-                'warnings' => ['Kuota/limit Groq API telah habis.'],
+                'warnings' => ['Kuota/limit Cerebras API telah habis.'],
                 'raw_response' => ['error_code' => 'quota_exceeded'],
             ]),
         ]);
