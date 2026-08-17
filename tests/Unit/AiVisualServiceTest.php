@@ -86,6 +86,62 @@ class AiVisualServiceTest extends TestCase
         (new AiVisualService())->analyze($imagePath, []);
     }
 
+    public function test_request_includes_complaint_context_disease_hint_and_question_bank(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        config(['services.dermacerdas_ai.url' => 'http://dermacerdas-ai.test']);
+
+        $disease = Disease::query()->create([
+            'code' => 'PSORIASIS_PAPULOSQUAMOUS_TEST',
+            'name' => 'Psoriasis test',
+            'slug' => 'psoriasis-papulosquamous-test',
+            'name_indonesian' => 'Psoriasis test',
+            'description' => 'Konteks test.',
+            'severity_scope' => 'moderate',
+            'default_action' => 'educate_only',
+            'is_active' => true,
+        ]);
+
+        DatasetClassMapping::query()->create([
+            'dataset_class_id' => 353,
+            'dataset_class_name' => 'Psoriasis',
+            'nama_indonesia' => 'Psoriasis',
+            'scope_category' => 'edukasi',
+            'boleh_rekomendasi_obat' => false,
+            'default_action' => 'educate_only',
+            'disease_id' => $disease->id,
+        ]);
+
+        Http::fake(function ($request) {
+            $this->assertSame('Saya menduga psoriasis dengan bercak merah bersisik.', $request['complaint_text']);
+            $this->assertSame('Psoriasis', $request['candidate_classes'][0]);
+            $this->assertNotEmpty($request['symptom_questions']);
+
+            return Http::response([
+                'provider' => 'nvidia',
+                'is_valid_skin_image' => true,
+                'suggested_symptom_codes' => ['G11', 'UNKNOWN'],
+                'candidates' => [],
+                'warnings' => [],
+                'raw_response' => [],
+            ]);
+        });
+
+        $imagePath = UploadedFile::fake()
+            ->image('skin.png', 320, 320)
+            ->store('consultations', 'public');
+
+        $analysis = (new AiVisualService())->analyze(
+            $imagePath,
+            [],
+            'Saya menduga psoriasis dengan bercak merah bersisik.',
+            [['dataset_class_name' => 'Psoriasis']]
+        );
+
+        $this->assertSame(['G11'], $analysis['suggested_symptom_codes']);
+    }
+
     public function test_quota_exhaustion_is_reported_as_unavailable_instead_of_invalid_skin(): void
     {
         Storage::fake('public');

@@ -20,6 +20,8 @@ class AnalyzeImageRequest(BaseModel):
     consultation_id: str
     image_base64: str = Field(..., min_length=16)
     candidate_classes: list[str] = Field(default_factory=list)
+    complaint_text: str = ""
+    symptom_questions: list[dict[str, str]] = Field(default_factory=list)
 
 
 class VisualCandidate(BaseModel):
@@ -34,6 +36,7 @@ class AnalyzeImageResponse(BaseModel):
     provider_status: str = "ok"
     is_valid_skin_image: bool
     candidates: list[VisualCandidate] = Field(default_factory=list)
+    suggested_symptom_codes: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     raw_response: dict = Field(default_factory=dict)
 

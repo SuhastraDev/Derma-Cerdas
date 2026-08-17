@@ -10,7 +10,7 @@ from app.services.nvidia_service import NvidiaVisualClient, normalize_candidates
 # symptom-relevant hints. Keeps the prompt small and token usage predictable
 # regardless of how many classes are mapped in the database.
 VISUAL_CANDIDATE_LIMIT = 20
-TOTAL_CANDIDATE_CAP = 24
+TOTAL_CANDIDATE_CAP = 48
 
 
 class VisualAnalysisService:
@@ -32,13 +32,31 @@ class VisualAnalysisService:
 
         candidate_classes = list(dict.fromkeys([*hint_classes, *visual_match_classes]))[:TOTAL_CANDIDATE_CAP]
 
-        ai_result = self.client.analyze(payload.image_base64, candidate_classes, dataset_matches)
+        ai_result = self.client.analyze(
+            payload.image_base64,
+            candidate_classes,
+            dataset_matches,
+            complaint_text=payload.complaint_text,
+            symptom_questions=payload.symptom_questions,
+        )
         warnings = [*validation.warnings, *ai_result.get("warnings", [])]
         candidates = normalize_candidates(ai_result.get("candidates", []), candidate_classes)
         is_valid_skin_image = bool(ai_result.get("is_valid_skin_image", False))
         provider_status = str(ai_result.get("provider_status", "ok"))
         raw_response = dict(ai_result.get("raw_response", {}))
         raw_response["dataset_retrieval"] = dataset_matches
+        allowed_symptom_codes = {
+            str(question.get("code"))
+            for question in payload.symptom_questions
+            if question.get("code")
+        }
+        suggested_symptom_codes = list(
+            dict.fromkeys(
+                code
+                for code in (ai_result.get("suggested_symptom_codes", []) or [])
+                if isinstance(code, str) and code in allowed_symptom_codes
+            )
+        )[:8]
 
         if provider_status == "ok" and not is_valid_skin_image and not candidates:
             skin_filter = self.client.validate_skin_image(payload.image_base64)
@@ -55,6 +73,7 @@ class VisualAnalysisService:
             provider_status=provider_status,
             is_valid_skin_image=is_valid_skin_image,
             candidates=candidates,
+            suggested_symptom_codes=suggested_symptom_codes,
             warnings=warnings,
             raw_response=raw_response,
         )

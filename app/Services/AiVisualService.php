@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Disease;
 use App\Models\DatasetClassMapping;
+use App\Models\Symptom;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -12,9 +13,9 @@ class AiVisualService
 {
     /**
      * @param  array<int, array<string, mixed>>  $textualRankings
-     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool|null, validation_status: string, candidates: array<int, array<string, mixed>>, warnings: array<int, string>, raw_response: array<string, mixed>}
+     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool|null, validation_status: string, candidates: array<int, array<string, mixed>>, suggested_symptom_codes: array<int, string>, warnings: array<int, string>, raw_response: array<string, mixed>}
      */
-    public function analyze(string $imagePath, array $textualRankings): array
+    public function analyze(string $imagePath, array $textualRankings, string $complaintText = '', array $diseaseHints = []): array
     {
         $baseUrl = trim((string) config('services.dermacerdas_ai.url'));
 
@@ -25,6 +26,7 @@ class AiVisualService
                 'is_valid_skin_image' => null,
                 'validation_status' => 'not_configured',
                 'candidates' => [],
+                'suggested_symptom_codes' => [],
                 'warnings' => [
                     'AI visual belum dikonfigurasi; sistem tidak membuat kandidat visual mock.',
                 ],
@@ -36,7 +38,9 @@ class AiVisualService
             $payload = [
                 'consultation_id' => pathinfo($imagePath, PATHINFO_FILENAME),
                 'image_base64' => base64_encode(Storage::disk('public')->get($imagePath)),
-                'candidate_classes' => $this->candidateClasses($textualRankings),
+                'complaint_text' => $complaintText,
+                'candidate_classes' => $this->candidateClasses($textualRankings, $diseaseHints),
+                'symptom_questions' => $this->symptomQuestions(),
             ];
 
             $response = Http::timeout((int) config('services.dermacerdas_ai.timeout', 20))
@@ -49,6 +53,7 @@ class AiVisualService
                 'is_valid_skin_image' => null,
                 'validation_status' => 'unavailable',
                 'candidates' => [],
+                'suggested_symptom_codes' => [],
                 'warnings' => ['AI visual tidak dapat dihubungi: '.$exception->getMessage()],
                 'raw_response' => [],
             ];
@@ -61,6 +66,7 @@ class AiVisualService
                 'is_valid_skin_image' => false,
                 'validation_status' => 'invalid',
                 'candidates' => [],
+                'suggested_symptom_codes' => [],
                 'warnings' => [(string) ($response->json('detail') ?? 'Gambar tidak valid untuk dianalisis.')],
                 'raw_response' => $response->json() ?? [],
             ];
@@ -88,6 +94,7 @@ class AiVisualService
                 'is_valid_skin_image' => null,
                 'validation_status' => 'unavailable',
                 'candidates' => [],
+                'suggested_symptom_codes' => [],
                 'warnings' => array_values($body['warnings'] ?? ['Layanan AI visual sedang tidak tersedia.']),
                 'raw_response' => $body['raw_response'] ?? $body,
             ];
@@ -102,6 +109,7 @@ class AiVisualService
             'is_valid_skin_image' => $isValidSkinImage,
             'validation_status' => $isValidSkinImage ? 'valid' : 'invalid',
             'candidates' => $visualCandidates,
+            'suggested_symptom_codes' => $this->validSuggestedSymptomCodes($body['suggested_symptom_codes'] ?? []),
             'warnings' => array_values($body['warnings'] ?? []),
             'raw_response' => $body['raw_response'] ?? $body,
         ];
@@ -111,8 +119,13 @@ class AiVisualService
      * @param  array<int, array<string, mixed>>  $textualRankings
      * @return array<int, string>
      */
-    private function candidateClasses(array $textualRankings): array
+    private function candidateClasses(array $textualRankings, array $diseaseHints = []): array
     {
+        $hintClasses = collect($diseaseHints)
+            ->map(fn ($hint): mixed => is_array($hint) ? ($hint['dataset_class_name'] ?? null) : null)
+            ->filter(fn ($className): bool => is_string($className) && trim($className) !== '')
+            ->values();
+
         $textualClasses = collect($textualRankings)
             ->take(8)
             ->flatMap(function (array $ranking): array {
@@ -129,11 +142,55 @@ class AiVisualService
             ->orderBy('dataset_class_id')
             ->pluck('dataset_class_name');
 
-        return $textualClasses
+        return $hintClasses
+            ->concat($textualClasses)
             ->concat($productionClasses)
             ->filter(fn ($className): bool => is_string($className) && trim($className) !== '')
             ->unique()
             ->take(160)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{code: string, name: string, question: string}>
+     */
+    private function symptomQuestions(): array
+    {
+        return Symptom::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get(['code', 'name', 'question'])
+            ->map(fn (Symptom $symptom): array => [
+                'code' => $symptom->code,
+                'name' => $symptom->name,
+                'question' => $symptom->question,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * AI suggestions can only reference the active local question bank.
+     * Unknown codes are discarded before they reach adaptive selection.
+     *
+     * @return array<int, string>
+     */
+    private function validSuggestedSymptomCodes(mixed $codes): array
+    {
+        if (! is_array($codes)) {
+            return [];
+        }
+
+        $validCodes = Symptom::query()
+            ->where('is_active', true)
+            ->pluck('code')
+            ->all();
+
+        return collect($codes)
+            ->filter(fn ($code): bool => is_string($code) && in_array($code, $validCodes, true))
+            ->unique()
+            ->take(8)
             ->values()
             ->all();
     }

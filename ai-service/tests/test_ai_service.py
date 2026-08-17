@@ -111,6 +111,31 @@ def test_nvidia_json_parser_handles_fenced_json() -> None:
     assert parsed["is_valid_skin_image"] is True
 
 
+def test_nvidia_response_filters_suggested_symptoms_to_available_question_codes() -> None:
+    payload = NvidiaVisualClient().response_from_text(
+        '{"is_valid_skin_image": true, "suggested_symptom_codes": ["G11", "UNKNOWN"], '
+        '"candidates": [], "warnings": []}',
+        allowed_symptom_codes=["G11", "G12"],
+    )
+
+    assert payload["suggested_symptom_codes"] == ["G11"]
+
+
+def test_visual_prompt_contains_complaint_and_question_bank() -> None:
+    prompt = NvidiaVisualClient().prompt(
+        ["Psoriasis", "Dry_Skin_Eczema"],
+        dataset_matches=[],
+        complaint_text="Saya menduga psoriasis dengan bercak merah bersisik.",
+        symptom_questions=[
+            {"code": "G11", "name": "Bercak bersisik", "question": "Apakah bercak bersisik?"},
+        ],
+    )
+
+    assert "Saya menduga psoriasis" in prompt
+    assert "G11" in prompt
+    assert "suggested_symptom_codes" in prompt
+
+
 def test_nvidia_response_treats_candidate_output_as_valid_skin_image() -> None:
     payload = NvidiaVisualClient().response_from_text(
         '{"is_valid_skin_image": false, "candidates": ['
@@ -217,7 +242,14 @@ def test_quota_exhaustion_does_not_run_second_skin_filter() -> None:
         def __init__(self) -> None:
             self.skin_filter_calls = 0
 
-        def analyze(self, image_base64, candidate_classes, dataset_matches):
+        def analyze(
+            self,
+            image_base64,
+            candidate_classes,
+            dataset_matches,
+            complaint_text="",
+            symptom_questions=None,
+        ):
             return {
                 "provider_status": "quota_exceeded",
                 "is_valid_skin_image": False,

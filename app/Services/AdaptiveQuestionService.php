@@ -13,9 +13,25 @@ class AdaptiveQuestionService
      * @param  array<int, array<string, mixed>>  $visualCandidates
      * @return Collection<int, Symptom>
      */
-    public function selectSymptoms(array $complaintFeatures, array $visualCandidates, int $min = 5, int $max = 8): Collection
+    public function selectSymptoms(
+        array $complaintFeatures,
+        array $visualCandidates,
+        array $aiSuggestedCodes = [],
+        int $min = 5,
+        int $max = 8
+    ): Collection
     {
         $scores = [];
+
+        // AI may choose which questions are useful, but it must never answer
+        // them on behalf of the user.
+        foreach (array_values($aiSuggestedCodes) as $index => $code) {
+            if (! is_string($code) || trim($code) === '') {
+                continue;
+            }
+
+            $scores[$code] = ($scores[$code] ?? 0) + max(1.5, 3.0 - ($index * 0.15));
+        }
 
         foreach (($complaintFeatures['symptom_evidence'] ?? []) as $code => $evidence) {
             $scores[$code] = ($scores[$code] ?? 0) + (float) ($evidence['score'] ?? 0) + 1.2;

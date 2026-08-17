@@ -31,13 +31,21 @@ class NvidiaVisualClient:
         image_base64: str,
         candidate_classes: list[str],
         dataset_matches: list[dict[str, Any]] | None = None,
+        complaint_text: str = "",
+        symptom_questions: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         classes = allowed_candidate_classes(candidate_classes)
 
         if settings.ai_mock_mode or not settings.nvidia_api_key:
             return self.mock_response(classes)
 
-        return self.nvidia_response(image_base64, classes, dataset_matches or [])
+        return self.nvidia_response(
+            image_base64,
+            classes,
+            dataset_matches or [],
+            complaint_text=complaint_text,
+            symptom_questions=symptom_questions or [],
+        )
 
     def assess_red_flags(self, complaint_text: str, red_flags: list[dict[str, str]]) -> dict[str, Any]:
         """Text-only pass over the free-text complaint to flag danger signs the
@@ -108,6 +116,7 @@ class NvidiaVisualClient:
             "provider_status": "mock_mode",
             "is_valid_skin_image": False,
             "candidates": [],
+            "suggested_symptom_codes": [],
             "warnings": [
                 "AI_MOCK_MODE aktif; validasi foto kulit tidak dijalankan agar sistem tidak memberi hasil visual palsu."
             ],
@@ -119,9 +128,16 @@ class NvidiaVisualClient:
         image_base64: str,
         classes: list[str],
         dataset_matches: list[dict[str, Any]],
+        complaint_text: str = "",
+        symptom_questions: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         data_url = self.image_data_url(image_base64)
-        prompt = self.prompt(classes, dataset_matches)
+        prompt = self.prompt(
+            classes,
+            dataset_matches,
+            complaint_text=complaint_text,
+            symptom_questions=symptom_questions or [],
+        )
 
         try:
             body = self.chat_completion(prompt, data_url)
@@ -130,7 +146,14 @@ class NvidiaVisualClient:
 
         text = self.completion_text(body)
 
-        return self.response_from_text(text)
+        return self.response_from_text(
+            text,
+            allowed_symptom_codes=[
+                str(question.get("code"))
+                for question in (symptom_questions or [])
+                if question.get("code")
+            ],
+        )
 
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
         if settings.ai_mock_mode or not settings.nvidia_api_key:
@@ -253,6 +276,7 @@ class NvidiaVisualClient:
             "provider_status": provider_status,
             "is_valid_skin_image": False,
             "candidates": [],
+            "suggested_symptom_codes": [],
             "warnings": [warning],
             "raw_response": {
                 "error": error,
@@ -272,18 +296,36 @@ class NvidiaVisualClient:
 
         return str(exception)
 
-    def response_from_text(self, text: str) -> dict[str, Any]:
+    def response_from_text(
+        self,
+        text: str,
+        allowed_symptom_codes: list[str] | None = None,
+    ) -> dict[str, Any]:
         parsed = self.parse_json_text(text)
 
         raw_candidates = parsed.get("candidates", [])
         has_candidates = isinstance(raw_candidates, list) and len(raw_candidates) > 0
         skin_evidence_score = self.skin_evidence_score(parsed.get("skin_evidence_score"))
         is_valid_skin_image = bool(parsed.get("is_valid_skin_image", True)) or has_candidates or skin_evidence_score >= 0.35
+        suggested_symptom_codes = parsed.get("suggested_symptom_codes", [])
+
+        if not isinstance(suggested_symptom_codes, list):
+            suggested_symptom_codes = []
+
+        if allowed_symptom_codes:
+            suggested_symptom_codes = [
+                code
+                for code in suggested_symptom_codes
+                if isinstance(code, str) and code in allowed_symptom_codes
+            ]
+
+        suggested_symptom_codes = list(dict.fromkeys(suggested_symptom_codes))[:8]
 
         return {
             "provider_status": "ok",
             "is_valid_skin_image": is_valid_skin_image,
             "candidates": raw_candidates,
+            "suggested_symptom_codes": suggested_symptom_codes,
             "warnings": parsed.get("warnings", []),
             "raw_response": {
                 "text": text,
@@ -292,8 +334,15 @@ class NvidiaVisualClient:
             },
         }
 
-    def prompt(self, classes: list[str], dataset_matches: list[dict[str, Any]] | None = None) -> str:
+    def prompt(
+        self,
+        classes: list[str],
+        dataset_matches: list[dict[str, Any]] | None = None,
+        complaint_text: str = "",
+        symptom_questions: list[dict[str, str]] | None = None,
+    ) -> str:
         class_list = json.dumps(classes, ensure_ascii=False)
+        symptom_list = json.dumps(symptom_questions or [], ensure_ascii=False)
         retrieval_hints = json.dumps(
             [
                 {
@@ -320,10 +369,14 @@ class NvidiaVisualClient:
             "Sistem lokal juga menghitung kemiripan warna, pola spasial, dan tekstur terhadap centroid gambar dataset. "
             f"Hint retrieval dataset: {retrieval_hints}. "
             "Hint ini hanya shortlist pendukung, bukan diagnosis; abaikan bila bertentangan dengan tampilan gambar. "
+            "Konteks keluhan pengguna berikut hanya digunakan untuk memilih pertanyaan yang paling relevan dan menilai kandidat awal, bukan untuk mengonfirmasi diagnosis: "
+            f"{json.dumps(complaint_text, ensure_ascii=False)}. "
+            "Daftar pertanyaan gejala lokal berikut adalah satu-satunya kode yang boleh disarankan: "
+            f"{symptom_list}. Pilih maksimal 8 kode pertanyaan yang paling informatif dari daftar tersebut. "
             "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain) dengan struktur persis: "
             '{"is_valid_skin_image": true, "skin_evidence_score": 0.86, "candidates": ['
             '{"dataset_class_name": "Tinea_Corporis", "visual_score": 0.74, '
-            '"reason": "alasan visual singkat"}], "warnings": []}. '
+            '"reason": "alasan visual singkat"}], "suggested_symptom_codes": ["G06", "G08"], "warnings": []}. '
             "Jika gambar valid sebagai kulit tetapi tidak cocok dengan daftar class, tetap set is_valid_skin_image true, "
             "skin_evidence_score tinggi, candidates kosong, dan jelaskan kualitas/keterbatasan di warnings."
         )

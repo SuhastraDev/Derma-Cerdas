@@ -157,6 +157,25 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertFalse($educateResult['can_recommend_medicine']);
     }
 
+    public function test_non_self_care_scope_overrides_otc_fusion_action(): void
+    {
+        $psoriasis = $this->createDisease('PSORIASIS_PAPULOSQUAMOUS', 'educate_only');
+
+        $result = (new FusionDecisionService())->decide(
+            textualDisease: $psoriasis,
+            textualCf: 0.90,
+            visualDisease: $psoriasis,
+            visualScore: 0.90,
+            visualAvailable: true,
+            redFlagResult: ['has_red_flags' => false],
+        );
+
+        $this->assertSame('F01', $result['fusion_rule_code']);
+        $this->assertSame('educate_only', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertStringContainsString('scope', strtolower($result['explanation']));
+    }
+
     private function createDisease(string $code, string $defaultAction = 'recommend_otc'): Disease
     {
         return Disease::query()->firstOrCreate(

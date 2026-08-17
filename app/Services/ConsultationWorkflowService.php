@@ -63,7 +63,12 @@ class ConsultationWorkflowService
             $this->storeRedFlags($consultation, $redFlagResult);
 
             $textualRankings = $this->certaintyFactorService->rankDiseases($normalizedSymptoms);
-            $visualAnalysis = $this->aiVisualService->analyze($imagePath, $textualRankings);
+            $visualAnalysis = $this->aiVisualService->analyze(
+                $imagePath,
+                $textualRankings,
+                (string) $complaintText,
+                $complaintFeatures['disease_hints'] ?? []
+            );
 
             if ($visualAnalysis['is_valid_skin_image'] !== true) {
                 Storage::disk('public')->delete($imagePath);
@@ -99,6 +104,12 @@ class ConsultationWorkflowService
                         'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
                         'status' => $visualAnalysis['validation_status'],
                         'is_valid_skin_image' => $visualAnalysis['is_valid_skin_image'],
+                        'suggested_symptom_codes' => $visualAnalysis['suggested_symptom_codes'] ?? [],
+                        'dataset_retrieval' => array_values(array_slice(
+                            $visualAnalysis['raw_response']['dataset_retrieval'] ?? [],
+                            0,
+                            10
+                        )),
                         'warnings' => $visualAnalysis['warnings'],
                     ],
                 ],

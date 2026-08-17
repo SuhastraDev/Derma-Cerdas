@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DatasetClassMapping;
 use Illuminate\Support\Str;
 
 class ComplaintExtractionService
@@ -11,6 +12,7 @@ class ComplaintExtractionService
      *     normalized_text: string,
      *     symptom_evidence: array<string, array{score: float, matched_terms: array<int, string>}>,
      *     red_flag_evidence: array<string, array{detected: bool, matched_terms: array<int, string>}>,
+     *     disease_hints: array<int, array{dataset_class_name: string, disease_code: string|null, matched_terms: array<int, string>}>,
      *     summary: array<int, string>
      * }
      */
@@ -23,19 +25,67 @@ class ComplaintExtractionService
                 'normalized_text' => '',
                 'symptom_evidence' => [],
                 'red_flag_evidence' => [],
+                'disease_hints' => [],
                 'summary' => [],
             ];
         }
 
         $symptomEvidence = $this->extractSymptomEvidence($normalizedText);
         $redFlagEvidence = $this->extractRedFlagEvidence($normalizedText);
+        $diseaseHints = $this->extractDiseaseHints($normalizedText);
 
         return [
             'normalized_text' => $normalizedText,
             'symptom_evidence' => $symptomEvidence,
             'red_flag_evidence' => $redFlagEvidence,
-            'summary' => $this->summary($symptomEvidence, $redFlagEvidence),
+            'disease_hints' => $diseaseHints,
+            'summary' => $this->summary($symptomEvidence, $redFlagEvidence, $diseaseHints),
         ];
+    }
+
+    /**
+     * Extract explicit disease words as shortlist hints only. A user statement
+     * such as "saya menduga psoriasis" must never become a diagnosis by itself.
+     *
+     * @return array<int, array{dataset_class_name: string, disease_code: string|null, matched_terms: array<int, string>}>
+     */
+    private function extractDiseaseHints(string $text): array
+    {
+        return DatasetClassMapping::query()
+            ->with('disease:id,code,name,name_indonesian')
+            ->get(['dataset_class_name', 'nama_indonesia', 'disease_id'])
+            ->map(function (DatasetClassMapping $mapping) use ($text): ?array {
+                $labels = collect([
+                    $mapping->dataset_class_name,
+                    $mapping->nama_indonesia,
+                    $mapping->disease?->name,
+                    $mapping->disease?->name_indonesian,
+                ])
+                    ->filter(fn ($label): bool => is_string($label) && trim($label) !== '')
+                    ->map(fn (string $label): string => $this->normalizeLabel($label))
+                    ->filter(fn (string $label): bool => mb_strlen($label) >= 4)
+                    ->unique()
+                    ->values();
+
+                $matchedTerms = $labels
+                    ->filter(fn (string $label): bool => Str::contains($text, $label))
+                    ->values()
+                    ->all();
+
+                if ($matchedTerms === []) {
+                    return null;
+                }
+
+                return [
+                    'dataset_class_name' => (string) $mapping->dataset_class_name,
+                    'disease_code' => $mapping->disease?->code,
+                    'matched_terms' => $matchedTerms,
+                ];
+            })
+            ->filter()
+            ->unique('dataset_class_name')
+            ->values()
+            ->all();
     }
 
     /**
@@ -131,9 +181,10 @@ class ComplaintExtractionService
     /**
      * @param  array<string, array{score: float, matched_terms: array<int, string>}>  $symptomEvidence
      * @param  array<string, array{detected: bool, matched_terms: array<int, string>}>  $redFlagEvidence
+     * @param  array<int, array{dataset_class_name: string, disease_code: string|null, matched_terms: array<int, string>}>  $diseaseHints
      * @return array<int, string>
      */
-    private function summary(array $symptomEvidence, array $redFlagEvidence): array
+    private function summary(array $symptomEvidence, array $redFlagEvidence, array $diseaseHints = []): array
     {
         $summary = [];
 
@@ -143,6 +194,14 @@ class ComplaintExtractionService
 
         foreach ($redFlagEvidence as $code => $evidence) {
             $summary[] = sprintf('Red flag %s terdeteksi dari kata: %s.', $code, implode(', ', $evidence['matched_terms']));
+        }
+
+        foreach ($diseaseHints as $hint) {
+            $summary[] = sprintf(
+                'Kandidat penyakit %s disebut pengguna sebagai konteks (%s), bukan diagnosis terkonfirmasi.',
+                $hint['dataset_class_name'],
+                implode(', ', $hint['matched_terms'])
+            );
         }
 
         return $summary;
@@ -192,5 +251,14 @@ class ComplaintExtractionService
         $text = preg_replace('/\s+/', ' ', $text) ?? $text;
 
         return trim($text);
+    }
+
+    private function normalizeLabel(string $label): string
+    {
+        $label = Str::lower(Str::ascii($label));
+        $label = preg_replace('/[_\-()\/]+/', ' ', $label) ?? $label;
+        $label = preg_replace('/\s+/', ' ', $label) ?? $label;
+
+        return trim($label);
     }
 }

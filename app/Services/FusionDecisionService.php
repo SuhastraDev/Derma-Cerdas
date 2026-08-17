@@ -44,6 +44,7 @@ class FusionDecisionService
             $visualAvailable,
             $hasRedFlags
         );
+        $action = $this->enforceDiseaseScope($textualDisease, $action);
 
         return [
             'disease' => $textualDisease,
@@ -148,6 +149,22 @@ class FusionDecisionService
             );
         }
 
+        if ($textualDisease->default_action === 'refer' && $action === 'refer') {
+            return sprintf(
+                'Scope rujukan: kandidat %s berada di luar penanganan mandiri sehingga hasil skrining tidak disertai rekomendasi obat dan perlu diperiksa tenaga kesehatan (CF %s).',
+                $diseaseName,
+                $cfPercent
+            );
+        }
+
+        if ($textualDisease->default_action === 'educate_only' && $action === 'educate_only') {
+            return sprintf(
+                'Scope edukasi: kandidat %s ditampilkan sebagai informasi awal berdasarkan data dan gejala, bukan diagnosis terkonfirmasi; sistem tidak memberikan rekomendasi obat (CF %s).',
+                $diseaseName,
+                $cfPercent
+            );
+        }
+
         if (! $visualAvailable || ! $visualDisease) {
             return match ($action) {
                 'recommend_otc_unsupported' => sprintf(
@@ -231,6 +248,15 @@ class FusionDecisionService
                     : 'Tetap disarankan konsultasi ke tenaga kesehatan untuk kepastian diagnosis.'
             ),
         ];
+    }
+
+    private function enforceDiseaseScope(Disease $disease, string $action): string
+    {
+        return match ($disease->default_action) {
+            'refer' => 'refer',
+            'educate_only' => 'educate_only',
+            default => $action,
+        };
     }
 
     private function clamp(float $value): float

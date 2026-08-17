@@ -79,14 +79,20 @@ class ConsultationController extends Controller
         $imagePath = $validated['image']->store('prechecks', 'public');
 
         try {
-            $visualAnalysis = $aiVisualService->analyze($imagePath, $textualRankings);
+            $visualAnalysis = $aiVisualService->analyze(
+                $imagePath,
+                $textualRankings,
+                $validated['complaint_text'],
+                $complaintFeatures['disease_hints'] ?? []
+            );
         } finally {
             Storage::disk('public')->delete($imagePath);
         }
 
         $selectedSymptoms = $adaptiveQuestionService->selectSymptoms(
             $complaintFeatures,
-            $visualAnalysis['candidates'] ?? []
+            $visualAnalysis['candidates'] ?? [],
+            $visualAnalysis['suggested_symptom_codes'] ?? []
         );
 
         $keywordDetectedRedFlags = collect($complaintFeatures['red_flag_evidence'] ?? [])
@@ -106,6 +112,8 @@ class ConsultationController extends Controller
                 'question' => $symptom->question,
             ])->values(),
             'complaint_summary' => $complaintFeatures['summary'] ?? [],
+            'disease_hints' => $complaintFeatures['disease_hints'] ?? [],
+            'suggested_symptom_codes' => $visualAnalysis['suggested_symptom_codes'] ?? [],
             'detected_red_flags' => $keywordDetectedRedFlags
                 ->merge($aiDetectedRedFlags)
                 ->unique()
