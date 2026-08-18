@@ -35,6 +35,7 @@ class DatabaseSeeder extends Seeder
         $this->seedDatasetMappings($diseases);
 
         $scopeDiseases = $this->seedScopeDiseases();
+        $this->seedRecommendations($scopeDiseases, $medicines);
         $options = $this->seedQuestionBank();
         $this->seedQuestionRules($scopeDiseases, $options);
         $this->retireOutOfScopeDiseases(array_keys($scopeDiseases));
@@ -42,7 +43,7 @@ class DatabaseSeeder extends Seeder
     }
 
     /**
-     * 15 kelas ruang lingkup beserta pemetaannya ke kelas SD-198.
+     * 16 kelas ruang lingkup beserta pemetaannya ke kelas SD-198.
      *
      * @return array<string, Disease>
      */
@@ -165,7 +166,7 @@ class DatabaseSeeder extends Seeder
                         'md' => $md,
                         'expert_cf' => round($mb - $md, 2),
                         'is_required' => false,
-                        'note' => 'Bank pertanyaan pilihan ganda 15 kelas; pengodean 0,80/0,60/0,40/0,20.',
+                        'note' => 'Bank pertanyaan pilihan ganda 16 kelas; pengodean 0,80/0,60/0,40/0,20.',
                     ],
                 );
             }
@@ -173,7 +174,7 @@ class DatabaseSeeder extends Seeder
     }
 
     /**
-     * Penyakit di luar 15 kelas ruang lingkup dinonaktifkan dan aturan gejalanya
+     * Penyakit di luar 16 kelas ruang lingkup dinonaktifkan dan aturan gejalanya
      * dicabut, agar hanya kelas yang basis pengetahuannya disusun yang ikut
      * dinilai. Kelas dataset miliknya dialihkan ke grup klinis yang benar.
      *
@@ -418,6 +419,20 @@ class DatabaseSeeder extends Seeder
             'MICONAZOLE' => ['Miconazole topikal', 'antijamur_topikal', 'krim/bedak', 'Gunakan pada area jamur ringan dan jaga area tetap kering.', 'Hindari area mata dan luka terbuka.', true],
             'KETOCONAZOLE_TOPICAL' => ['Ketoconazole topikal', 'antijamur_topikal', 'sampo/krim', 'Gunakan sesuai petunjuk kemasan untuk bercak jamur superfisial.', 'Rujuk jika keluhan luas, berulang berat, atau mengenai area sensitif.', true],
             'AVOID_TRIGGER' => ['Edukasi hindari pemicu', 'edukasi', 'non-obat', 'Hindari bahan pemicu, jangan menggaruk, dan gunakan sabun lembut.', 'Segera periksa jika muncul red flags.', false],
+            'BENZOYL_PEROXIDE' => ['Benzoil peroksida 2,5%', 'anti_jerawat_topikal', 'gel/krim', 'Oleskan tipis pada area berjerawat setelah wajah dibersihkan dan dikeringkan. Mulai tiap dua malam sekali, lalu naikkan menjadi satu sampai dua kali sehari bila kulit sudah terbiasa. Hasil biasanya baru terlihat setelah 4 sampai 6 minggu.', 'Kulit kering dan mengelupas ringan lazim terjadi; kurangi frekuensi bila berlebihan. Dapat memutihkan kain dan rambut. Hindari mata, bibir, dan mukosa.', true],
+            'CETIRIZINE' => ['Cetirizine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Dapat menimbulkan kantuk; hindari mengemudi bila terasa mengantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true],
+            'LORATADINE' => ['Loratadine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Umumnya tidak menyebabkan kantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true],
+            'HYDROCORTISONE' => ['Hidrokortison 1%', 'kortikosteroid_topikal_ringan', 'krim', 'Oleskan tipis satu sampai dua kali sehari pada area yang meradang.', 'JANGAN dipakai lebih dari 7 hari tanpa arahan dokter atau apoteker. Hentikan begitu keluhan mereda. Tidak untuk infeksi jamur, luka terbuka, atau area wajah dan lipatan tanpa arahan tenaga kesehatan.', true],
+        ];
+
+        // Rujukan per obat. Aturan pakai dan batas durasi di atas disalin dari
+        // sumber ini, bukan disusun sendiri - kesalahan dosis berakibat langsung
+        // pada tubuh pengguna. Verifikasi apoteker tetap wajib sebelum klinis.
+        $sources = [
+            'BENZOYL_PEROXIDE' => 'NHS, How and when to use benzoyl peroxide (nhs.uk/medicines/benzoyl-peroxide); StatPearls Benzoyl Peroxide (NBK537220); DermNet, Benzoyl peroxide.',
+            'CETIRIZINE' => 'StatPearls Cetirizine (NBK549776); NHS Notts APC, Urticaria and/or angioedema in adults primary care pathway.',
+            'LORATADINE' => 'StatPearls Loratadine (NBK542278); NHS Notts APC, Urticaria and/or angioedema in adults primary care pathway.',
+            'HYDROCORTISONE' => 'NHS, Hydrocortisone for skin (nhs.uk/medicines/hydrocortisone-skin-cream) - batas 7 hari tanpa arahan tenaga kesehatan; MedlinePlus Hydrocortisone Topical.',
         ];
 
         $medicines = [];
@@ -430,7 +445,7 @@ class DatabaseSeeder extends Seeder
                     'dosage_form' => $form,
                     'usage_instruction' => $usage,
                     'warnings' => $warnings,
-                    'source_note' => 'Rujukan awal: Pedoman penggunaan obat bebas/bebas terbatas Kemenkes dan verifikasi BPOM. Validasi pakar tetap diperlukan.',
+                    'source_note' => $sources[$code] ?? 'Rujukan awal: pedoman penggunaan obat bebas/bebas terbatas dan verifikasi BPOM. Validasi apoteker tetap diperlukan sebelum dipakai klinis.',
                     'is_limited_otc' => $limited,
                     'is_active' => true,
                 ],
@@ -447,12 +462,13 @@ class DatabaseSeeder extends Seeder
     private function seedRecommendations(array $diseases, array $medicines): void
     {
         $links = [
-            'ECZEMA' => ['EMOLLIENT', 'CALAMINE', 'AVOID_TRIGGER'],
+            'ECZEMA' => ['EMOLLIENT', 'HYDROCORTISONE', 'CALAMINE', 'AVOID_TRIGGER'],
             'ACUTE_ECZEMA' => ['EMOLLIENT', 'CALAMINE', 'AVOID_TRIGGER'],
             'DRY_SKIN_ECZEMA' => ['EMOLLIENT', 'AVOID_TRIGGER'],
-            'ALLERGIC_CONTACT_DERMATITIS' => ['AVOID_TRIGGER', 'CALAMINE', 'EMOLLIENT'],
-            'URTICARIA' => ['CALAMINE', 'AVOID_TRIGGER'],
+            'ALLERGIC_CONTACT_DERMATITIS' => ['AVOID_TRIGGER', 'HYDROCORTISONE', 'CALAMINE', 'EMOLLIENT'],
+            'URTICARIA' => ['CETIRIZINE', 'LORATADINE', 'CALAMINE', 'AVOID_TRIGGER'],
             'CANDIDIASIS' => ['CLOTRIMAZOLE', 'MICONAZOLE'],
+            'ACNE_VULGARIS' => ['BENZOYL_PEROXIDE'],
             'TINEA_CORPORIS' => ['CLOTRIMAZOLE', 'MICONAZOLE'],
             'TINEA_CRURIS' => ['CLOTRIMAZOLE', 'MICONAZOLE'],
             'TINEA_PEDIS' => ['MICONAZOLE', 'CLOTRIMAZOLE'],
@@ -460,7 +476,17 @@ class DatabaseSeeder extends Seeder
         ];
 
         foreach ($links as $diseaseCode => $medicineCodes) {
+            // Sebagian penyakit baru dibuat pada seedScopeDiseases(), sesudah
+            // metode ini berjalan. Pemanggilan kedua di run() yang mengisinya.
+            if (! isset($diseases[$diseaseCode])) {
+                continue;
+            }
+
             foreach ($medicineCodes as $priority => $medicineCode) {
+                if (! isset($medicines[$medicineCode])) {
+                    continue;
+                }
+
                 DiseaseMedicineRecommendation::query()->updateOrCreate(
                     [
                         'disease_id' => $diseases[$diseaseCode]->id,

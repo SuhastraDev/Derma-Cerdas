@@ -548,9 +548,13 @@ class ConsultationFlowTest extends TestCase
         // dengan hasil visual wajib dinyatakan - bukan dibuang diam-diam seperti
         // sebelumnya. Penahanan mutlak hanya untuk kandidat visual bergolongan rujuk.
         $this->assertSame('F04', $finalResult->fusion_rule_code);
+        $this->assertSame('recommend_otc_mismatch', $finalResult->action);
+
+        // Inti jaminannya: temuan visual yang berbeda TIDAK boleh hilang dari
+        // layar. Eksim kini tergolong boleh-obat, jadi obatnya memang muncul -
+        // tetapi wajib disertai catatan bahwa foto mengarah ke tempat lain.
         $this->assertStringContainsString('Psoriasis', $finalResult->explanation);
         $this->assertDatabaseHas('consultation_visual_results', ['disease_id' => $psoriasis->id]);
-        $this->assertSame([], $finalResult->recommendations_snapshot);
     }
 
     /**
