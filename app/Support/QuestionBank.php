@@ -157,6 +157,7 @@ class QuestionBank
                     'P6_SATUSISI' => ['Hanya satu sisi tubuh, mengikuti garis atau pita', 'Tidak melewati garis tengah tubuh'],
                     'P6_SIMETRIS' => ['Muncul di kedua sisi tubuh', 'Misalnya kedua siku atau kedua lengan'],
                     'P6_SETEMPAT' => ['Hanya di satu tempat saja', 'Tidak ada di bagian tubuh lain'],
+                    'P6_TERSEBAR' => ['Beberapa titik terpisah, tidak beraturan', 'Muncul di titik-titik berbeda yang tidak simetris, bisa juga berpindah-pindah'],
                     'P6_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
                 ],
             ],
@@ -238,7 +239,7 @@ class QuestionBank
             'TINEA_VERSICOLOR' => [
                 'P1_BADAN' => 0.60, 'P2_DATAR' => 0.80,
                 'P3_HALUS' => 0.80, 'P4_GATAL' => 0.20,
-                'P5_MINGGU' => 0.40, 'P5_TAHUN' => 0.20, 'P7_KERINGAT' => 0.60,
+                'P5_MINGGU' => 0.40, 'P5_TAHUN' => 0.20, 'P6_TERSEBAR' => 0.40, 'P7_KERINGAT' => 0.60,
             ],
             'PSORIASIS' => [
                 'P1_SIKULUTUT' => 0.80, 'P1_BADAN' => 0.20,
@@ -259,7 +260,7 @@ class QuestionBank
             'URTICARIA' => [
                 'P1_BADAN' => 0.40, 'P2_BENTOL' => 0.80,
                 'P3_TIDAKADA' => 0.60, 'P4_GATAL' => 0.80,
-                'P5_JAM' => 0.80, 'P7_OBAT' => 0.40, 'P7_KONTAK' => 0.20,
+                'P5_JAM' => 0.80, 'P6_TERSEBAR' => 0.40, 'P7_OBAT' => 0.40, 'P7_KONTAK' => 0.20,
             ],
             'CANDIDIASIS' => [
                 'P1_LIPATAN' => 0.80, 'P2_MERAHLUAS' => 0.40,
