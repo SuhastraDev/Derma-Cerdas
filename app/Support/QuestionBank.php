@@ -108,6 +108,7 @@ class QuestionBank
                     'P2_GELEMBUNG' => ['Gelembung kecil bergerombol', 'Berisi cairan bening, mengelompok rapat di satu area'],
                     'P2_KERAK' => ['Luka berkerak kuning', 'Seperti madu yang mengering di atas luka'],
                     'P2_MERAHLUAS' => ['Merah luas tanpa batas jelas', 'Kemerahan menyebar dan tepinya sulit ditentukan'],
+                    'P2_KUKUBERUBAH' => ['Bukan ruam, tapi kuku yang berubah', 'Kuku menebal, rapuh, atau berubah warna, tanpa ruam pada kulit di sekitarnya'],
                     'P2_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
                 ],
             ],
@@ -179,7 +180,7 @@ class QuestionBank
                 'options' => [
                     'P9_ANAK' => ['Anak (di bawah 12 tahun)', 'Beberapa kondisi kulit hampir khas usia anak'],
                     'P9_REMAJA' => ['Remaja (12-18 tahun)', 'Perubahan hormon memengaruhi kelenjar minyak'],
-                    'P9_DEWASA' => ['Dewasa (19-50 tahun)', ''],
+                    'P9_DEWASA' => ['Dewasa (19-50 tahun)', 'Rentang usia paling luas; sebagian besar kondisi kulit tidak terikat usia tertentu di sini'],
                     'P9_LANSIA' => ['Di atas 50 tahun', 'Paparan matahari bertahun-tahun mulai berdampak'],
                     'P9_TIDAKYAKIN' => ['Tidak ingin menyebutkan', 'Lewati bila tidak nyaman'],
                 ],
@@ -273,7 +274,7 @@ class QuestionBank
                 'P5_MINGGU' => 0.40, 'P5_TAHUN' => 0.20, 'P6_SIMETRIS' => 0.20,
             ],
             'ONYCHOMYCOSIS' => [
-                'P1_KUKU' => 0.80, 'P3_TEBAL' => 0.20,
+                'P1_KUKU' => 0.80, 'P2_KUKUBERUBAH' => 0.80, 'P3_TEBAL' => 0.20,
                 'P4_TIDAKTERASA' => 0.40, 'P5_TAHUN' => 0.60,
             ],
             'KELOID' => [
