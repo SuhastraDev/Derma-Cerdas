@@ -196,7 +196,11 @@ class ConsultationFlowTest extends TestCase
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
 
         $this->assertSame($psoriasis->id, $finalResult->disease_id);
-        $this->assertSame('F09', $finalResult->fusion_rule_code);
+        // P3_TEBAL + P2_PLAK give Psoriasis textual_cf 0.96, and the visual
+        // score is 0.78 - both clear the "high" bar, so F11 (dual-confirmed
+        // across both modalities) now fires ahead of F09 (visual + text-hint
+        // only). Stronger evidence, same safe outcome: no OTC medicine.
+        $this->assertSame('F11', $finalResult->fusion_rule_code);
         $this->assertSame('educate_only', $finalResult->action);
         $this->assertSame([], $finalResult->recommendations_snapshot);
     }

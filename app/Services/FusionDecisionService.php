@@ -298,6 +298,109 @@ class FusionDecisionService
     }
 
     /**
+     * F11 (perluasan di luar Tabel 3.13): mencari kandidat yang didukung KUAT
+     * oleh gejala DAN visual sekaligus, dengan menoleh ke seluruh daftar
+     * kandidat kedua modalitas - bukan hanya juara #1 masing-masing sisi
+     * seperti F01-F05.
+     *
+     * Tabel 3.13 hanya membandingkan identitas Pv vs Pt. Ini bisa membuat
+     * penyakit yang sebenarnya didukung kuat oleh foto DAN gejala kalah start
+     * dari penyakit lain yang CF gejalanya kebetulan lebih tinggi tapi nol
+     * dukungan visual. Kasus produksi nyata: foto Tinea Corporis (kurap) skor
+     * 0,92 dengan CF gejala 0,76 (di atas ambang tinggi) kalah dari
+     * Kandidiasis yang CF gejalanya 0,9977 tapi tidak muncul sama sekali di
+     * kandidat visual - rumus CF yang menumpuk banyak gejala sedang membuat
+     * penyakit dengan gejala tumpang tindih terbanyak menang, bukan yang
+     * paling didukung dua sumber bukti independen.
+     *
+     * @param  array<int, array<string, mixed>>  $textualRankings  CertaintyFactorService::rankDiseases(), terurut.
+     * @param  array<int, array<string, mixed>>  $visualCandidates  Kandidat visual (disease + visual_score), terurut.
+     * @return array{disease: Disease, textual_cf: float, visual_score: float}|null
+     */
+    public function findDualConfirmedCandidate(array $textualRankings, array $visualCandidates): ?array
+    {
+        $visualScores = [];
+
+        foreach ($visualCandidates as $candidate) {
+            $disease = $candidate['disease'] ?? null;
+
+            if ($disease instanceof Disease) {
+                $visualScores[$disease->id] = max(
+                    $visualScores[$disease->id] ?? 0.0,
+                    $this->clamp((float) ($candidate['visual_score'] ?? 0.0))
+                );
+            }
+        }
+
+        if ($visualScores === []) {
+            return null;
+        }
+
+        $best = null;
+
+        foreach ($textualRankings as $ranking) {
+            $disease = $ranking['disease'] ?? null;
+            $textualCf = $this->clamp((float) ($ranking['textual_cf'] ?? 0.0));
+
+            if (! $disease instanceof Disease || $textualCf < self::HIGH_CF) {
+                continue;
+            }
+
+            $visualScore = $visualScores[$disease->id] ?? 0.0;
+
+            if ($visualScore < self::HIGH_CF) {
+                continue;
+            }
+
+            $combined = $textualCf + $visualScore;
+
+            if ($best === null || $combined > $best['combined']) {
+                $best = [
+                    'disease' => $disease,
+                    'textual_cf' => $textualCf,
+                    'visual_score' => $visualScore,
+                    'combined' => $combined,
+                ];
+            }
+        }
+
+        return $best === null ? null : [
+            'disease' => $best['disease'],
+            'textual_cf' => $best['textual_cf'],
+            'visual_score' => $best['visual_score'],
+        ];
+    }
+
+    public function decideDualConfirmed(Disease $disease, float $textualCf, float $visualScore): array
+    {
+        $textualCf = $this->clamp($textualCf);
+        $visualScore = $this->clamp($visualScore);
+        $action = $this->enforceDiseaseScope($disease, 'recommend_otc');
+
+        return [
+            'disease' => $disease,
+            'visual_score' => $visualScore,
+            'textual_cf' => $textualCf,
+            'fusion_score' => $textualCf,
+            'fusion_score_percent' => $this->round($textualCf * 100),
+            'fusion_rule_code' => 'F11',
+            'action' => $action,
+            'can_recommend_medicine' => in_array($action, [
+                'recommend_otc',
+                'recommend_otc_observe',
+                'recommend_otc_mismatch',
+                'recommend_otc_unsupported',
+            ], true),
+            'explanation' => sprintf(
+                'Aturan F11 (perluasan di luar Tabel 3.13): %s didukung kuat oleh gejala (CF %s) DAN analisis visual (skor %s) sekaligus, dikonfirmasi silang dari seluruh daftar kandidat kedua modalitas - bukan hanya kandidat teratas masing-masing sisi.',
+                $disease->name_indonesian ?: $disease->name,
+                sprintf('%.1f%%', $textualCf * 100),
+                sprintf('%.1f%%', $visualScore * 100)
+            ),
+        ];
+    }
+
+    /**
      * F10: the user's free-text context names a non-self-care disease and the
      * answered symptom profile supports that context, while visual evidence is
      * unavailable or too weak. This prevents broad symptoms such as "scaly" and

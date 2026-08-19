@@ -349,7 +349,21 @@ class ConsultationWorkflowService
         // Kandidat yang berasal dari fallback indeks dataset ($hasValidatedVisual
         // false) tidak boleh menggeser keputusan lewat F08/F09 - sumbernya indeks
         // ber-recall 3,5%, bukan analisis model.
-        if (
+        // F11: didahulukan dari F08/F09 karena syaratnya lebih ketat - dikonfirmasi
+        // silang lewat SELURUH daftar kandidat kedua modalitas, bukan cuma juara
+        // #1 gejala atau kecocokan dengan hint dari teks keluhan.
+        $dualConfirmed = ($hasRedFlags || ! $hasValidatedVisual)
+            ? null
+            : $this->fusionDecisionService->findDualConfirmedCandidate($textualRankings, $visualCandidates);
+
+        if ($dualConfirmed !== null) {
+            $decision = $this->fusionDecisionService->decideDualConfirmed(
+                $dualConfirmed['disease'],
+                $dualConfirmed['textual_cf'],
+                $dualConfirmed['visual_score'],
+            );
+            $finalDisease = $dualConfirmed['disease'];
+        } elseif (
             ! $hasRedFlags
             && $hasValidatedVisual
             && $visualDisease
