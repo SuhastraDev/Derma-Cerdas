@@ -39,7 +39,7 @@ class DatabaseSeeder extends Seeder
         $options = $this->seedQuestionBank();
         $this->seedQuestionRules($scopeDiseases, $options);
         $this->retireOutOfScopeDiseases(array_keys($scopeDiseases));
-        $this->deactivateOrphanedSymptoms();
+        $this->deactivateOrphanedSymptoms(array_keys($options));
     }
 
     /**
@@ -270,10 +270,25 @@ class DatabaseSeeder extends Seeder
      * lima penyakit naskah diganti ke G01-G20 (Subbab 3.2.3.4). Dinonaktifkan
      * agar tidak lagi ditanyakan ke pengguna tanpa memengaruhi hasil apa pun.
      */
-    private function deactivateOrphanedSymptoms(): void
+    /**
+     * Nonaktifkan gejala warisan bank lama yang tidak lagi terhubung ke penyakit
+     * aktif mana pun.
+     *
+     * Seluruh pilihan pada bank pertanyaan berjalan dikecualikan, bukan hanya
+     * yang memiliki aturan CF. Pilihan penyelamat seperti "Tidak yakin" dan
+     * "Tidak ada pemicu yang jelas" memang sengaja bernilai nol untuk semua
+     * penyakit, sehingga tanpa pengecualian ini pilihan tersebut ikut
+     * dinonaktifkan dan hilang dari layar. Akibatnya pengguna yang keluhannya
+     * memang tidak punya pemicu terpaksa memilih jawaban yang salah, dan
+     * jawaban salah itu langsung menjadi bukti CF yang keliru.
+     *
+     * @param  array<int, string>  $kodePilihanBerjalan
+     */
+    private function deactivateOrphanedSymptoms(array $kodePilihanBerjalan): void
     {
         Symptom::query()
             ->where('is_active', true)
+            ->whereNotIn('code', $kodePilihanBerjalan)
             ->whereDoesntHave('diseaseRules', fn ($query) => $query->whereHas('disease', fn ($q) => $q->where('is_active', true)))
             ->update(['is_active' => false]);
     }
