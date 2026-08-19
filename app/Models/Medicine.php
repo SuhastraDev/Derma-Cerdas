@@ -14,6 +14,7 @@ class Medicine extends Model
         'category',
         'dosage_form',
         'image_path',
+        'image_credit',
         'usage_instruction',
         'warnings',
         'source_note',

@@ -187,9 +187,17 @@ class ConsultationController extends Controller
                 'fusion_rule_code' => $finalResult->fusion_rule_code,
                 'explanation' => $finalResult->explanation,
                 'recommendations' => $finalResult->recommendations_snapshot ?? [],
-                'education' => in_array($finalResult->fusion_rule_code, ['F08', 'F09'], true) ? [
+                // Golongan educate_only/refer tidak pernah dapat rekomendasi obat
+                // (lihat FusionDecisionService::enforceDiseaseScope), jadi panel ini
+                // ditampilkan berdasarkan aksi akhir, bukan hanya rule F08/F09 -
+                // sebelumnya penyakit yang cocok lewat jalur normal F01-F07 (mis.
+                // Psoriasis lewat gejala+visual) tidak pernah menampilkan info ini
+                // sama sekali, padahal aksinya juga educate_only.
+                'education' => in_array($finalResult->action, ['educate_only', 'refer'], true) ? [
                     'description' => $finalResult->disease?->description,
+                    'medical_treatment_note' => $finalResult->disease?->medical_treatment_note,
                     'source_note' => $finalResult->disease?->source_note,
+                    'is_outside_validated_scope' => in_array($finalResult->fusion_rule_code, ['F08', 'F09'], true),
                 ] : null,
             ] : null,
             'redFlags' => $consultation->redFlags

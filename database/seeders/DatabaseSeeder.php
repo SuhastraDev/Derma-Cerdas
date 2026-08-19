@@ -59,6 +59,8 @@ class DatabaseSeeder extends Seeder
                     'slug' => Str::slug($row['code']),
                     'name_indonesian' => $row['name_indonesian'],
                     'description' => $row['description'],
+                    'source_note' => $row['source_note'] ?? null,
+                    'medical_treatment_note' => $row['medical_treatment_note'] ?? null,
                     'severity_scope' => $row['default_action'] === 'refer' ? 'moderate' : 'mild',
                     'default_action' => $row['default_action'],
                     'is_active' => true,
@@ -428,16 +430,16 @@ class DatabaseSeeder extends Seeder
     private function seedMedicines(): array
     {
         $rows = [
-            'EMOLLIENT' => ['Pelembap / emollient', 'non_obat', 'krim/lotion', 'Gunakan rutin pada area kering setelah mandi dan saat kulit terasa kering.', 'Hentikan jika iritasi memburuk.', false],
-            'CALAMINE' => ['Calamine lotion', 'anti_gatal_topikal', 'lotion', 'Oleskan tipis pada area gatal ringan sesuai petunjuk kemasan.', 'Tidak untuk luka terbuka luas, mata, atau mukosa.', true],
-            'CLOTRIMAZOLE' => ['Clotrimazole topikal', 'antijamur_topikal', 'krim', 'Oleskan tipis pada area jamur ringan sesuai petunjuk kemasan.', 'Rujuk jika luas, bernanah, nyeri berat, atau tidak membaik.', true],
-            'MICONAZOLE' => ['Miconazole topikal', 'antijamur_topikal', 'krim/bedak', 'Gunakan pada area jamur ringan dan jaga area tetap kering.', 'Hindari area mata dan luka terbuka.', true],
-            'KETOCONAZOLE_TOPICAL' => ['Ketoconazole topikal', 'antijamur_topikal', 'sampo/krim', 'Gunakan sesuai petunjuk kemasan untuk bercak jamur superfisial.', 'Rujuk jika keluhan luas, berulang berat, atau mengenai area sensitif.', true],
-            'AVOID_TRIGGER' => ['Edukasi hindari pemicu', 'edukasi', 'non-obat', 'Hindari bahan pemicu, jangan menggaruk, dan gunakan sabun lembut.', 'Segera periksa jika muncul red flags.', false],
-            'BENZOYL_PEROXIDE' => ['Benzoil peroksida 2,5%', 'anti_jerawat_topikal', 'gel/krim', 'Oleskan tipis pada area berjerawat setelah wajah dibersihkan dan dikeringkan. Mulai tiap dua malam sekali, lalu naikkan menjadi satu sampai dua kali sehari bila kulit sudah terbiasa. Hasil biasanya baru terlihat setelah 4 sampai 6 minggu.', 'Kulit kering dan mengelupas ringan lazim terjadi; kurangi frekuensi bila berlebihan. Dapat memutihkan kain dan rambut. Hindari mata, bibir, dan mukosa.', true],
-            'CETIRIZINE' => ['Cetirizine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Dapat menimbulkan kantuk; hindari mengemudi bila terasa mengantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true],
-            'LORATADINE' => ['Loratadine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Umumnya tidak menyebabkan kantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true],
-            'HYDROCORTISONE' => ['Hidrokortison 1%', 'kortikosteroid_topikal_ringan', 'krim', 'Oleskan tipis satu sampai dua kali sehari pada area yang meradang.', 'JANGAN dipakai lebih dari 7 hari tanpa arahan dokter atau apoteker. Hentikan begitu keluhan mereda. Tidak untuk infeksi jamur, luka terbuka, atau area wajah dan lipatan tanpa arahan tenaga kesehatan.', true],
+            'EMOLLIENT' => ['Pelembap / emollient', 'non_obat', 'krim/lotion', 'Gunakan rutin pada area kering setelah mandi dan saat kulit terasa kering.', 'Hentikan jika iritasi memburuk.', false, 'emollient.jpg', 'Foto: "Aqueous cream B.P." oleh Ben Steele, CC BY-SA 3.0, Wikimedia Commons.'],
+            'CALAMINE' => ['Calamine lotion', 'anti_gatal_topikal', 'lotion', 'Oleskan tipis pada area gatal ringan sesuai petunjuk kemasan.', 'Tidak untuk luka terbuka luas, mata, atau mukosa.', true, 'calamine.jpg', 'Foto: "Calamine lotion.png", CC BY-SA 4.0, Wikimedia Commons.'],
+            'CLOTRIMAZOLE' => ['Clotrimazole topikal', 'antijamur_topikal', 'krim', 'Oleskan tipis pada area jamur ringan sesuai petunjuk kemasan.', 'Rujuk jika luas, bernanah, nyeri berat, atau tidak membaik.', true, 'clotrimazole.jpg', 'Foto: krim clotrimazol generik oleh Jimmy Olano, CC BY-SA 3.0, Wikimedia Commons. Kemasan pada foto untuk penggunaan vaginal; bentuk krim topikal untuk kulit serupa.'],
+            'MICONAZOLE' => ['Miconazole topikal', 'antijamur_topikal', 'krim/bedak', 'Gunakan pada area jamur ringan dan jaga area tetap kering.', 'Hindari area mata dan luka terbuka.', true, 'miconazole.jpg', 'Foto: krim mikonazol nitrat generik, CC BY-SA 3.0, Wikimedia Commons. Kemasan pada foto untuk penggunaan vaginal; bentuk krim topikal untuk kulit serupa.'],
+            'KETOCONAZOLE_TOPICAL' => ['Ketoconazole topikal', 'antijamur_topikal', 'sampo/krim', 'Gunakan sesuai petunjuk kemasan untuk bercak jamur superfisial.', 'Rujuk jika keluhan luas, berulang berat, atau mengenai area sensitif.', true, 'ketoconazole.jpg', 'Foto: sampo ketokonazol (Aurobindo), CC BY-SA 4.0, Wikimedia Commons.'],
+            'AVOID_TRIGGER' => ['Edukasi hindari pemicu', 'edukasi', 'non-obat', 'Hindari bahan pemicu, jangan menggaruk, dan gunakan sabun lembut.', 'Segera periksa jika muncul red flags.', false, null, null],
+            'BENZOYL_PEROXIDE' => ['Benzoil peroksida 2,5%', 'anti_jerawat_topikal', 'gel/krim', 'Oleskan tipis pada area berjerawat setelah wajah dibersihkan dan dikeringkan. Mulai tiap dua malam sekali, lalu naikkan menjadi satu sampai dua kali sehari bila kulit sudah terbiasa. Hasil biasanya baru terlihat setelah 4 sampai 6 minggu.', 'Kulit kering dan mengelupas ringan lazim terjadi; kurangi frekuensi bila berlebihan. Dapat memutihkan kain dan rambut. Hindari mata, bibir, dan mukosa.', true, 'benzoyl-peroxide.jpg', 'Foto: gel benzoil peroksida (Basiron, Galderma), CC BY-SA 3.0 / GFDL, Wikimedia Commons.'],
+            'CETIRIZINE' => ['Cetirizine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Dapat menimbulkan kantuk; hindari mengemudi bila terasa mengantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true, 'cetirizine.jpg', 'Foto: tablet cetirizine 10 mg generik oleh Kristoferb, CC BY-SA 3.0, Wikimedia Commons.'],
+            'LORATADINE' => ['Loratadine 10 mg', 'antihistamin_oral', 'tablet', 'Satu tablet 10 mg sekali sehari untuk dewasa.', 'Umumnya tidak menyebabkan kantuk. Hentikan dan periksa bila bentol disertai sesak, bengkak bibir atau wajah.', true, 'loratadine.jpg', 'Foto: blister tablet loratadine 10 mg generik, CC BY-SA 4.0, Wikimedia Commons.'],
+            'HYDROCORTISONE' => ['Hidrokortison 1%', 'kortikosteroid_topikal_ringan', 'krim', 'Oleskan tipis satu sampai dua kali sehari pada area yang meradang.', 'JANGAN dipakai lebih dari 7 hari tanpa arahan dokter atau apoteker. Hentikan begitu keluhan mereda. Tidak untuk infeksi jamur, luka terbuka, atau area wajah dan lipatan tanpa arahan tenaga kesehatan.', true, 'hydrocortisone.jpg', 'Foto: tube krim hidrokortison 1% (Natureplex), CC BY-SA 4.0, Wikimedia Commons.'],
         ];
 
         // Rujukan per obat. Aturan pakai dan batas durasi di atas disalin dari
@@ -452,12 +454,14 @@ class DatabaseSeeder extends Seeder
 
         $medicines = [];
 
-        foreach ($rows as $code => [$name, $category, $form, $usage, $warnings, $limited]) {
+        foreach ($rows as $code => [$name, $category, $form, $usage, $warnings, $limited, $image, $imageCredit]) {
             $medicines[$code] = Medicine::query()->updateOrCreate(
                 ['name' => $name],
                 [
                     'category' => $category,
                     'dosage_form' => $form,
+                    'image_path' => $image ? 'images/medicines/'.$image : null,
+                    'image_credit' => $imageCredit,
                     'usage_instruction' => $usage,
                     'warnings' => $warnings,
                     'source_note' => $sources[$code] ?? 'Rujukan awal: pedoman penggunaan obat bebas/bebas terbatas dan verifikasi BPOM. Validasi apoteker tetap diperlukan sebelum dipakai klinis.',

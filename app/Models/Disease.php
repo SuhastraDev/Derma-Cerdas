@@ -14,6 +14,7 @@ class Disease extends Model
         'name_indonesian',
         'description',
         'source_note',
+        'medical_treatment_note',
         'severity_scope',
         'default_action',
         'is_active',

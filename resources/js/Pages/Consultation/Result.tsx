@@ -47,13 +47,17 @@ type FinalResult = {
         medicine_name: string;
         category: string;
         dosage_form: string | null;
+        image_url: string | null;
+        image_credit: string | null;
         usage_instruction: string | null;
         warnings: string | null;
         recommendation_note: string | null;
     }>;
     education: {
         description: string | null;
+        medical_treatment_note: string | null;
         source_note: string | null;
+        is_outside_validated_scope: boolean;
     } | null;
 } | null;
 
@@ -520,32 +524,50 @@ export default function Result({
                             {finalResult.recommendations.map((recommendation) => (
                                 <article
                                     key={recommendation.medicine_name}
-                                    className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-4"
+                                    className="overflow-hidden rounded-lg border border-emerald-100 bg-emerald-50/60"
                                 >
-                                    <p className="font-semibold text-slate-950">
-                                        {recommendation.medicine_name}
-                                    </p>
-                                    <p className="mt-1 text-sm text-slate-600">
-                                        {recommendation.category}
-                                        {recommendation.dosage_form
-                                            ? ` / ${recommendation.dosage_form}`
-                                            : ''}
-                                    </p>
-                                    <p className="mt-3 text-sm leading-6 text-slate-700">
-                                        {recommendation.usage_instruction}
-                                    </p>
-                                    {recommendation.warnings && (
-                                        <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-950">
-                                            {recommendation.warnings}
-                                        </p>
+                                    {recommendation.image_url && (
+                                        <img
+                                            src={recommendation.image_url}
+                                            alt={recommendation.medicine_name}
+                                            className="h-40 w-full border-b border-emerald-100 bg-white object-contain p-3"
+                                            loading="lazy"
+                                        />
                                     )}
+                                    <div className="p-4">
+                                        <p className="font-semibold text-slate-950">
+                                            {recommendation.medicine_name}
+                                        </p>
+                                        <p className="mt-1 text-sm text-slate-600">
+                                            {recommendation.category}
+                                            {recommendation.dosage_form
+                                                ? ` / ${recommendation.dosage_form}`
+                                                : ''}
+                                        </p>
+                                        <p className="mt-3 text-sm leading-6 text-slate-700">
+                                            {recommendation.usage_instruction}
+                                        </p>
+                                        {recommendation.warnings && (
+                                            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-950">
+                                                {recommendation.warnings}
+                                            </p>
+                                        )}
+                                        {recommendation.image_credit && (
+                                            <p className="mt-3 text-xs leading-4 text-slate-400">
+                                                {recommendation.image_credit}
+                                            </p>
+                                        )}
+                                    </div>
                                 </article>
                             ))}
                         </div>
                     </section>
                 )}
 
-                {finalResult?.education && (finalResult.education.description || finalResult.education.source_note) && (
+                {finalResult?.education &&
+                    (finalResult.education.description ||
+                        finalResult.education.medical_treatment_note ||
+                        finalResult.education.source_note) && (
                     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                         <div className="flex items-start justify-between gap-4">
                             <div>
@@ -563,13 +585,25 @@ export default function Result({
                                 {finalResult.education.description}
                             </p>
                         )}
+                        {finalResult.education.medical_treatment_note && (
+                            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Biasanya ditangani dokter dengan
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-slate-700">
+                                    {finalResult.education.medical_treatment_note}
+                                </p>
+                            </div>
+                        )}
                         {finalResult.education.source_note && (
                             <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500">
                                 Sumber: {finalResult.education.source_note}
                             </p>
                         )}
                         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-                            Ini adalah informasi umum, bukan diagnosis pasti atau rekomendasi obat. Sistem belum memiliki basis pengetahuan gejala tervalidasi untuk kondisi ini — tetap konsultasikan ke dokter atau tenaga kesehatan untuk kepastian.
+                            {finalResult.education.is_outside_validated_scope
+                                ? 'Ini adalah informasi umum, bukan diagnosis pasti atau rekomendasi obat. Sistem belum memiliki basis pengetahuan gejala tervalidasi untuk kondisi ini — tetap konsultasikan ke dokter atau tenaga kesehatan untuk kepastian.'
+                                : 'Ini adalah informasi umum, bukan resep atau rekomendasi beli obat sendiri. Kondisi ini butuh penilaian atau penanganan langsung oleh dokter, jadi sistem tidak menampilkan obat bebas untuk kondisi ini.'}
                         </p>
                     </section>
                 )}

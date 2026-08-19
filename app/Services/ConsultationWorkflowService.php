@@ -470,6 +470,8 @@ class ConsultationWorkflowService
                 'medicine_name' => $recommendation->medicine->name,
                 'category' => $recommendation->medicine->category,
                 'dosage_form' => $recommendation->medicine->dosage_form,
+                'image_url' => $recommendation->medicine->image_path ? asset($recommendation->medicine->image_path) : null,
+                'image_credit' => $recommendation->medicine->image_credit,
                 'usage_instruction' => $recommendation->medicine->usage_instruction,
                 'warnings' => $recommendation->medicine->warnings,
                 'recommendation_note' => $recommendation->recommendation_note,
