@@ -26,6 +26,10 @@ class FusionDecisionService
      * @param  float  $visualScore  Skor kandidat visual teratas (0 jika Pv null).
      * @param  bool  $visualAvailable  False jika citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup (F06).
      * @param  array{has_red_flags?: bool}  $redFlagResult
+     * @param  bool  $visualOutsideScope  True jika model AI secara eksplisit menilai foto BUKAN salah satu
+     *                                    dari 16 penyakit cakupan (bukti berlawanan), bukan sekadar visual
+     *                                    yang tidak sempat/tidak bisa dianalisis (ketiadaan bukti). Hanya
+     *                                    dipakai saat $visualAvailable false (F06) - lihat textOnlyRule().
      */
     public function decide(
         Disease $textualDisease,
@@ -33,7 +37,8 @@ class FusionDecisionService
         ?Disease $visualDisease,
         float $visualScore,
         bool $visualAvailable,
-        array $redFlagResult = []
+        array $redFlagResult = [],
+        bool $visualOutsideScope = false
     ): array {
         $textualCf = $this->clamp($textualCf);
         $visualScore = $this->clamp($visualScore);
@@ -44,7 +49,8 @@ class FusionDecisionService
             $textualCf,
             $visualDisease,
             $visualAvailable,
-            $hasRedFlags
+            $hasRedFlags,
+            $visualOutsideScope
         );
         $action = $this->enforceDiseaseScope($textualDisease, $action);
 
@@ -69,7 +75,8 @@ class FusionDecisionService
                 $action,
                 $textualCf,
                 $visualAvailable,
-                $hasRedFlags
+                $hasRedFlags,
+                $visualOutsideScope
             ),
         ];
     }
@@ -82,7 +89,8 @@ class FusionDecisionService
         float $textualCf,
         ?Disease $visualDisease,
         bool $visualAvailable,
-        bool $hasRedFlags
+        bool $hasRedFlags,
+        bool $visualOutsideScope = false
     ): array {
         // F07: tanda bahaya menggantikan seluruh aturan lainnya.
         if ($hasRedFlags) {
@@ -91,7 +99,7 @@ class FusionDecisionService
 
         // F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup.
         if (! $visualAvailable || ! $visualDisease) {
-            return $this->textOnlyRule($textualCf);
+            return $this->textOnlyRule($textualCf, $visualOutsideScope);
         }
 
         $matches = $visualDisease->is($textualDisease);
@@ -118,8 +126,19 @@ class FusionDecisionService
     /**
      * @return array{0: string, 1: string}
      */
-    private function textOnlyRule(float $textualCf): array
+    private function textOnlyRule(float $textualCf, bool $visualOutsideScope = false): array
     {
+        // $visualOutsideScope true berarti model AI sudah secara aktif menilai
+        // foto ini BUKAN salah satu dari 16 penyakit cakupan - bukti berlawanan,
+        // bukan cuma ketiadaan bukti (mis. provider belum dikonfigurasi/timeout).
+        // CF gejala setinggi apa pun tidak boleh menimpa bukti berlawanan itu,
+        // karena kombinasi gejala umum (gatal + bersisik) bisa kebetulan cocok
+        // dengan salah satu dari 16 penyakit padahal foto menunjukkan kondisi
+        // yang sama sekali berbeda dan tidak pernah dinilai sistem.
+        if ($visualOutsideScope) {
+            return ['F06', 'insufficient_confidence'];
+        }
+
         if ($textualCf >= self::HIGH_CF) {
             return ['F06', 'recommend_otc_unsupported'];
         }
@@ -138,7 +157,8 @@ class FusionDecisionService
         string $action,
         float $textualCf,
         bool $visualAvailable,
-        bool $hasRedFlags
+        bool $hasRedFlags,
+        bool $visualOutsideScope = false
     ): string {
         $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
         $cfPercent = sprintf('%.1f%%', $textualCf * 100);
@@ -181,6 +201,17 @@ class FusionDecisionService
         }
 
         if (! $visualAvailable || ! $visualDisease) {
+            // Bukti berlawanan (bukan sekadar ketiadaan bukti): model AI aktif
+            // menilai foto ini bukan salah satu dari 16 penyakit, sehingga CF
+            // gejala setinggi apa pun tidak boleh menghasilkan rekomendasi obat.
+            if ($visualOutsideScope) {
+                return sprintf(
+                    'Aturan F06: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, sehingga rekomendasi obat ditahan meski keyakinan gejala terhadap %s tinggi (CF %s). Disarankan konsultasi langsung untuk memastikan kondisi sebenarnya.',
+                    $diseaseName,
+                    $cfPercent
+                );
+            }
+
             return match ($action) {
                 'recommend_otc_unsupported' => sprintf(
                     'Aturan F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup, sehingga keputusan disandarkan pada gejala (%s, CF %s) dengan status keyakinan terbatas karena tidak didukung analisis visual.',

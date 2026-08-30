@@ -637,6 +637,73 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi produksi (audit 2026-08-30): foto Vitiligo (di luar 16 penyakit
+     * cakupan) dijawab dengan gejala yang kebetulan sangat mirip Tinea
+     * Corporis. Model AI benar menilai outside_scope=true dan mengembalikan
+     * candidates kosong, tetapi provider_status jatuh ke dataset_fallback
+     * (indeks kemiripan visual, bukan analisis) sehingga hasilnya sebelumnya
+     * tetap recommend_otc_unsupported untuk Kurap badan - padahal foto sama
+     * sekali tidak mendukungnya. outside_scope harus menahan rekomendasi
+     * obat berapa pun CF teksnya, dan metadata harus menyimpan sinyal itu
+     * supaya UI bisa menampilkan peringatan eksplisit.
+     */
+    public function test_visual_outside_scope_prevents_otc_recommendation_despite_high_textual_cf(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'dataset_fallback',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'degraded',
+                    'outside_scope' => true,
+                    'observed_description' => 'Bercak putih dengan batas tegas, tidak bersisik, tidak meradang.',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => ['dermacerdas_ai tidak menghasilkan JSON kandidat yang valid; sistem memakai kandidat fallback dari indeks visual dataset.'],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Vitiligo',
+            'complaint_text' => 'Muncul bercak putih di kulit sejak beberapa bulan, tidak gatal, tidak nyeri.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P4_GATAL' => 1.0,
+                'P3_HALUS' => 1.0,
+                'P2_CINCIN' => 1.0,
+                'P8_TENGAHBERSIH' => 1.0,
+                'P5_MINGGU' => 1.0,
+                'P7_KERINGAT' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame('insufficient_confidence', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+        $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $finalResult->explanation);
+
+        $consultation = Consultation::query()->firstOrFail();
+        $this->assertTrue($consultation->refresh()->metadata['visual_validation']['outside_scope']);
+        $this->assertSame(
+            'Bercak putih dengan batas tegas, tidak bersisik, tidak meradang.',
+            $consultation->metadata['visual_validation']['observed_description']
+        );
+
+        $this->get(route('consultation.result', $consultation->session_code))
+            ->assertOk();
+    }
+
+    /**
      * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
      * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
      * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini

@@ -27,8 +27,11 @@ type Consultation = {
     final_action: string | null;
     visual_validation: {
         provider: string;
+        provider_status?: string;
         status: string;
         is_valid_skin_image: boolean | null;
+        outside_scope?: boolean;
+        observed_description?: string;
         warnings: string[];
     } | null;
     created_at: string | null;
@@ -367,6 +370,31 @@ export default function Result({
                         </div>
                     </div>
                 </section>
+
+                {consultation.visual_validation?.status === 'degraded' && (
+                    <section className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm font-semibold">
+                                    Foto belum berhasil dianalisis AI secara valid
+                                </p>
+                                <p className="mt-1 text-sm leading-6">
+                                    {consultation.visual_validation.outside_scope
+                                        ? 'Sistem AI menilai foto ini kemungkinan bukan salah satu dari 16 kondisi yang dikenali sistem, sehingga hasil di bawah murni berdasarkan jawaban gejala tanpa dukungan bukti visual yang tervalidasi.'
+                                        : 'Analisis foto gagal menghasilkan kandidat yang tervalidasi, sehingga hasil di bawah murni berdasarkan jawaban gejala tanpa dukungan bukti visual yang tervalidasi.'}
+                                    {' '}Kandidat pada bagian &ldquo;Kandidat visual&rdquo; di bawah hanya perkiraan kemiripan warna/pola foto, bukan analisis AI yang diverifikasi.
+                                </p>
+                                {consultation.visual_validation.observed_description && (
+                                    <p className="mt-2 text-sm leading-6">
+                                        <span className="font-semibold">Ciri yang terlihat pada foto: </span>
+                                        {consultation.visual_validation.observed_description}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                )}
 
                 <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
@@ -740,6 +768,12 @@ export default function Result({
                         <h2 className="text-lg font-semibold text-slate-950">
                             Kandidat visual
                         </h2>
+                        {consultation.visual_validation?.provider_status === 'dataset_fallback' && (
+                            <p className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                Perkiraan kemiripan visual kasar — bukan analisis AI tervalidasi
+                            </p>
+                        )}
                         <div className="mt-4 space-y-3">
                             {visualResults.length > 0 ? (
                                 visualResults.map((visual) => (

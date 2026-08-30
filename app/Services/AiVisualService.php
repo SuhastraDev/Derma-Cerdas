@@ -13,7 +13,7 @@ class AiVisualService
 {
     /**
      * @param  array<int, array<string, mixed>>  $textualRankings
-     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool|null, validation_status: string, candidates: array<int, array<string, mixed>>, suggested_symptom_codes: array<int, string>, warnings: array<int, string>, raw_response: array<string, mixed>}
+     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool|null, validation_status: string, outside_scope: bool, observed_description: string, candidates: array<int, array<string, mixed>>, suggested_symptom_codes: array<int, string>, warnings: array<int, string>, raw_response: array<string, mixed>}
      */
     public function analyze(string $imagePath, array $textualRankings, string $complaintText = '', array $diseaseHints = []): array
     {
@@ -25,6 +25,8 @@ class AiVisualService
                 'provider_status' => 'not_configured',
                 'is_valid_skin_image' => null,
                 'validation_status' => 'not_configured',
+                'outside_scope' => false,
+                'observed_description' => '',
                 'candidates' => [],
                 'suggested_symptom_codes' => [],
                 'warnings' => [
@@ -55,6 +57,8 @@ class AiVisualService
                 'provider_status' => 'unavailable',
                 'is_valid_skin_image' => null,
                 'validation_status' => 'unavailable',
+                'outside_scope' => false,
+                'observed_description' => '',
                 'candidates' => [],
                 'suggested_symptom_codes' => [],
                 'warnings' => ['AI visual tidak dapat dihubungi: '.$exception->getMessage()],
@@ -68,6 +72,8 @@ class AiVisualService
                 'provider_status' => 'invalid_request',
                 'is_valid_skin_image' => false,
                 'validation_status' => 'invalid',
+                'outside_scope' => false,
+                'observed_description' => '',
                 'candidates' => [],
                 'suggested_symptom_codes' => [],
                 'warnings' => [(string) ($response->json('detail') ?? 'Gambar tidak valid untuk dianalisis.')],
@@ -102,6 +108,8 @@ class AiVisualService
                 'provider_status' => $providerStatus,
                 'is_valid_skin_image' => null,
                 'validation_status' => 'unavailable',
+                'outside_scope' => false,
+                'observed_description' => '',
                 'candidates' => [],
                 'suggested_symptom_codes' => [],
                 'warnings' => array_values($body['warnings'] ?? ['Layanan AI visual sedang tidak tersedia.']),
@@ -120,6 +128,13 @@ class AiVisualService
         $visualCandidates = $this->mapCandidates($body['candidates'] ?? []);
         $isValidSkinImage = (bool) ($body['is_valid_skin_image'] ?? false) || $visualCandidates !== [];
 
+        // Sinyal positif dari model bahwa foto ini kemungkinan bukan salah satu
+        // dari 16 penyakit cakupan - bukan cuma "kandidat kosong" karena provider
+        // gagal. Sebelumnya field ini dihitung oleh ai-service tapi tidak pernah
+        // dibaca di sini, sehingga hilang total sebelum sempat dipakai memberi
+        // peringatan ke pengguna saat F06 tetap merekomendasikan obat.
+        $outsideScope = (bool) ($body['outside_scope'] ?? false);
+
         return [
             'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
             'provider_status' => $providerStatus,
@@ -129,6 +144,8 @@ class AiVisualService
                 $isDegraded => 'degraded',
                 default => 'valid',
             },
+            'outside_scope' => $outsideScope,
+            'observed_description' => (string) ($body['observed_description'] ?? ''),
             'candidates' => $visualCandidates,
             'suggested_symptom_codes' => $this->validSuggestedSymptomCodes($body['suggested_symptom_codes'] ?? []),
             'warnings' => array_values($body['warnings'] ?? []),

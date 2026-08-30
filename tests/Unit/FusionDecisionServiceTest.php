@@ -122,6 +122,54 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertTrue($result['can_recommend_medicine']);
     }
 
+    /**
+     * Regresi produksi: foto Vitiligo (di luar 16 penyakit cakupan) dijawab
+     * dengan gejala yang kebetulan sangat mirip Tinea Corporis (CF 99,9%).
+     * Sebelum perbaikan ini, F06 murni berbasis CF teks tetap mengeluarkan
+     * recommend_otc_unsupported untuk Tinea Corporis meski foto sama sekali
+     * tidak mendukungnya - visualOutsideScope adalah bukti BERLAWANAN
+     * (bukan sekadar ketiadaan bukti) dan harus menahan rekomendasi obat
+     * berapa pun CF-nya.
+     */
+    public function test_f06_visual_outside_scope_never_recommends_medicine_even_with_high_cf(): void
+    {
+        $disease = $this->createDisease('TINEA_CORPORIS');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $disease,
+            textualCf: 0.999,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => false],
+            visualOutsideScope: true,
+        );
+
+        $this->assertSame('F06', $result['fusion_rule_code']);
+        $this->assertSame('insufficient_confidence', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $result['explanation']);
+    }
+
+    /** Tanpa visualOutsideScope, perilaku F06 lama (berbasis CF semata) tidak berubah. */
+    public function test_f06_visual_unavailable_without_outside_scope_keeps_cf_based_behavior(): void
+    {
+        $disease = $this->createDisease('TINEA_CORPORIS');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $disease,
+            textualCf: 0.999,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => false],
+            visualOutsideScope: false,
+        );
+
+        $this->assertSame('recommend_otc_unsupported', $result['action']);
+        $this->assertTrue($result['can_recommend_medicine']);
+    }
+
     public function test_f07_red_flags_force_refer_even_when_matching_and_cf_is_high(): void
     {
         $disease = $this->createDisease('TINEA_PEDIS');

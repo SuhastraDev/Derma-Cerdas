@@ -94,6 +94,7 @@ class ConsultationWorkflowService
                 $visualAnalysis['validation_status'] === 'valid',
                 $complaintFeatures['disease_hints'] ?? [],
                 $normalizedSymptoms,
+                (bool) ($visualAnalysis['outside_scope'] ?? false),
             );
 
             $consultation->update([
@@ -111,6 +112,8 @@ class ConsultationWorkflowService
                         'provider_status' => $visualAnalysis['provider_status'] ?? 'ok',
                         'status' => $visualAnalysis['validation_status'],
                         'is_valid_skin_image' => $visualAnalysis['is_valid_skin_image'],
+                        'outside_scope' => $visualAnalysis['outside_scope'] ?? false,
+                        'observed_description' => $visualAnalysis['observed_description'] ?? '',
                         'suggested_symptom_codes' => $visualAnalysis['suggested_symptom_codes'] ?? [],
                         'dataset_retrieval' => array_values(array_slice(
                             $visualAnalysis['raw_response']['dataset_retrieval'] ?? [],
@@ -321,7 +324,8 @@ class ConsultationWorkflowService
         array $redFlagResult,
         bool $hasValidatedVisual,
         array $diseaseHints = [],
-        array $normalizedSymptoms = []
+        array $normalizedSymptoms = [],
+        bool $visualOutsideScope = false
     ): ConsultationFinalResult {
         if (! $textualRankings) {
             /** @var Disease $fallbackDisease */
@@ -388,6 +392,11 @@ class ConsultationWorkflowService
                 visualScore: $visualScore,
                 visualAvailable: $hasValidatedVisual && $topVisual !== null,
                 redFlagResult: $redFlagResult,
+                // Bukti positif bahwa foto BUKAN salah satu dari 16 penyakit
+                // cakupan (bukan sekadar "visual tidak sempat dianalisis").
+                // Hanya relevan saat visual memang tidak tervalidasi -
+                // relevansinya dipastikan di dalam FusionDecisionService sendiri.
+                visualOutsideScope: $visualOutsideScope,
             );
             $finalDisease = $textualDisease;
         }
