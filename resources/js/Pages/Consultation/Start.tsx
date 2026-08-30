@@ -107,6 +107,23 @@ function scoreLabel(value: number): string {
     return certaintyLabels[value] ?? `${Math.round(value * 100)}%`;
 }
 
+// 'degraded' berarti provider AI gagal parsing dan sistem jatuh ke
+// pencarian kemiripan visual mentah (recall@1 ~3,5%), bukan analisis AI
+// tervalidasi - lihat AiVisualService::analyze(). Sebelumnya box precheck
+// cuma menampilkan kata "degraded" mentah tanpa konteks, sehingga kandidat
+// tebakan kasar terlihat sama meyakinkannya dengan analisis AI asli.
+function precheckVisualLabel(status: string, providerStatus: string): { text: string; isDegraded: boolean } {
+    if (providerStatus === 'dataset_fallback' || status === 'degraded') {
+        return { text: 'Perkiraan kasar dari kemiripan foto (belum tervalidasi AI)', isDegraded: true };
+    }
+
+    if (status === 'valid') {
+        return { text: 'Tervalidasi AI', isDegraded: false };
+    }
+
+    return { text: 'Belum tersedia', isDegraded: false };
+}
+
 function symptomGuide(code: string): string {
     if (code.includes('DAYS') || code.includes('RECURRENT')) {
         return 'Pilih berdasarkan lamanya keluhan berlangsung atau sering kambuh.';
@@ -691,13 +708,34 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                         <span className="block font-semibold">Pertanyaan adaptif</span>
                                         Sistem memilih {adaptiveSymptoms.length} dari {symptoms.length} gejala aktif untuk ditanyakan.
                                     </div>
-                                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-                                        <span className="block font-semibold text-slate-950">Precheck visual</span>
-                                        Status: {precheckResult.visual.status}
-                                        {precheckResult.visual.candidates[0]?.disease_name
-                                            ? ` / kandidat utama ${precheckResult.visual.candidates[0].disease_name}`
-                                            : ''}
-                                    </div>
+                                    {(() => {
+                                        const label = precheckVisualLabel(
+                                            precheckResult.visual.status,
+                                            precheckResult.visual.provider_status,
+                                        );
+                                        const topCandidate = precheckResult.visual.candidates[0];
+
+                                        return (
+                                            <div
+                                                className={`rounded-xl border p-4 text-sm leading-6 ${
+                                                    label.isDegraded
+                                                        ? 'border-amber-200 bg-amber-50 text-amber-950'
+                                                        : 'border-slate-200 bg-slate-50 text-slate-700'
+                                                }`}
+                                            >
+                                                <span className="block font-semibold text-slate-950">Precheck visual</span>
+                                                {label.text}
+                                                {topCandidate?.disease_name
+                                                    ? ` / kandidat awal ${topCandidate.disease_name}`
+                                                    : ''}
+                                                {label.isDegraded && (
+                                                    <p className="mt-2 text-xs leading-5">
+                                                        Ini baru perkiraan kasar berdasarkan kemiripan warna/tekstur foto, bukan analisis AI tervalidasi. Hasil akhir setelah Anda menjawab gejala bisa berbeda.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             )}
                             {currentQuestion && (
