@@ -94,7 +94,7 @@ class ConsultationWorkflowService
                 $visualAnalysis['validation_status'] === 'valid',
                 $complaintFeatures['disease_hints'] ?? [],
                 $normalizedSymptoms,
-                (bool) ($visualAnalysis['outside_scope'] ?? false),
+                $this->visualIsUntrustworthy($visualAnalysis),
             );
 
             $consultation->update([
@@ -127,6 +127,30 @@ class ConsultationWorkflowService
 
             return $consultation->refresh();
         });
+    }
+
+    /**
+     * Visual dianggap tidak bisa dipercaya sebagai bukti pendukung salah satu
+     * dari 16 penyakit - bukan sekadar ketiadaan bukti (provider belum
+     * dikonfigurasi/timeout, yang tetap wajar diberi OTC dengan catatan
+     * keterbatasan) - dalam dua kasus:
+     *
+     * 1. Model AI secara eksplisit menilai foto ini di luar 16 kelas
+     *    (`outside_scope`).
+     * 2. Provider gagal menghasilkan JSON valid sama sekali, sehingga sistem
+     *    jatuh ke fallback indeks kemiripan visual (`validation_status`
+     *    'degraded', recall@1 hanya ~3,5%). Regresi produksi 2026-08-30
+     *    menunjukkan `outside_scope` sendirian tidak cukup: field itu hanya
+     *    terisi saat model BERHASIL parsing dan menolak dengan sengaja -
+     *    kegagalan parsing total membuatnya tetap `false` walau sistem
+     *    sebenarnya sama sekali tidak tahu apa isi foto itu.
+     *
+     * @param  array{validation_status: string, outside_scope?: bool}  $visualAnalysis
+     */
+    private function visualIsUntrustworthy(array $visualAnalysis): bool
+    {
+        return ($visualAnalysis['validation_status'] ?? null) === 'degraded'
+            || (bool) ($visualAnalysis['outside_scope'] ?? false);
     }
 
     /**
@@ -325,7 +349,7 @@ class ConsultationWorkflowService
         bool $hasValidatedVisual,
         array $diseaseHints = [],
         array $normalizedSymptoms = [],
-        bool $visualOutsideScope = false
+        bool $visualUnreliable = false
     ): ConsultationFinalResult {
         if (! $textualRankings) {
             /** @var Disease $fallbackDisease */
@@ -392,11 +416,11 @@ class ConsultationWorkflowService
                 visualScore: $visualScore,
                 visualAvailable: $hasValidatedVisual && $topVisual !== null,
                 redFlagResult: $redFlagResult,
-                // Bukti positif bahwa foto BUKAN salah satu dari 16 penyakit
-                // cakupan (bukan sekadar "visual tidak sempat dianalisis").
-                // Hanya relevan saat visual memang tidak tervalidasi -
-                // relevansinya dipastikan di dalam FusionDecisionService sendiri.
-                visualOutsideScope: $visualOutsideScope,
+                // Bukti berlawanan/tidak meyakinkan (bukan sekadar "visual tidak
+                // sempat dianalisis") - lihat visualIsUntrustworthy() di atas.
+                // Hanya relevan saat visual memang tidak tervalidasi - relevansinya
+                // dipastikan di dalam FusionDecisionService sendiri.
+                visualUnreliable: $visualUnreliable,
             );
             $finalDisease = $textualDisease;
         }

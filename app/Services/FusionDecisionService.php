@@ -26,10 +26,14 @@ class FusionDecisionService
      * @param  float  $visualScore  Skor kandidat visual teratas (0 jika Pv null).
      * @param  bool  $visualAvailable  False jika citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup (F06).
      * @param  array{has_red_flags?: bool}  $redFlagResult
-     * @param  bool  $visualOutsideScope  True jika model AI secara eksplisit menilai foto BUKAN salah satu
-     *                                    dari 16 penyakit cakupan (bukti berlawanan), bukan sekadar visual
-     *                                    yang tidak sempat/tidak bisa dianalisis (ketiadaan bukti). Hanya
-     *                                    dipakai saat $visualAvailable false (F06) - lihat textOnlyRule().
+     * @param  bool  $visualUnreliable  True jika visual sempat dianalisis TAPI hasilnya tidak bisa dipercaya
+     *                                    sebagai bukti pendukung salah satu dari 16 penyakit - baik karena
+     *                                    model AI eksplisit menolak (outside_scope) maupun karena parsing
+     *                                    gagal total sehingga sistem jatuh ke fallback indeks kemiripan
+     *                                    visual (recall@1 ~3,5%). Ini bukti berlawanan/tidak meyakinkan,
+     *                                    beda dari $visualAvailable false karena provider belum sempat
+     *                                    dipanggil sama sekali (ketiadaan bukti murni). Hanya dipakai saat
+     *                                    $visualAvailable false (F06) - lihat textOnlyRule().
      */
     public function decide(
         Disease $textualDisease,
@@ -38,7 +42,7 @@ class FusionDecisionService
         float $visualScore,
         bool $visualAvailable,
         array $redFlagResult = [],
-        bool $visualOutsideScope = false
+        bool $visualUnreliable = false
     ): array {
         $textualCf = $this->clamp($textualCf);
         $visualScore = $this->clamp($visualScore);
@@ -50,7 +54,7 @@ class FusionDecisionService
             $visualDisease,
             $visualAvailable,
             $hasRedFlags,
-            $visualOutsideScope
+            $visualUnreliable
         );
         $action = $this->enforceDiseaseScope($textualDisease, $action);
 
@@ -76,7 +80,7 @@ class FusionDecisionService
                 $textualCf,
                 $visualAvailable,
                 $hasRedFlags,
-                $visualOutsideScope
+                $visualUnreliable
             ),
         ];
     }
@@ -90,7 +94,7 @@ class FusionDecisionService
         ?Disease $visualDisease,
         bool $visualAvailable,
         bool $hasRedFlags,
-        bool $visualOutsideScope = false
+        bool $visualUnreliable = false
     ): array {
         // F07: tanda bahaya menggantikan seluruh aturan lainnya.
         if ($hasRedFlags) {
@@ -99,7 +103,7 @@ class FusionDecisionService
 
         // F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup.
         if (! $visualAvailable || ! $visualDisease) {
-            return $this->textOnlyRule($textualCf, $visualOutsideScope);
+            return $this->textOnlyRule($textualCf, $visualUnreliable);
         }
 
         $matches = $visualDisease->is($textualDisease);
@@ -126,16 +130,17 @@ class FusionDecisionService
     /**
      * @return array{0: string, 1: string}
      */
-    private function textOnlyRule(float $textualCf, bool $visualOutsideScope = false): array
+    private function textOnlyRule(float $textualCf, bool $visualUnreliable = false): array
     {
-        // $visualOutsideScope true berarti model AI sudah secara aktif menilai
-        // foto ini BUKAN salah satu dari 16 penyakit cakupan - bukti berlawanan,
-        // bukan cuma ketiadaan bukti (mis. provider belum dikonfigurasi/timeout).
-        // CF gejala setinggi apa pun tidak boleh menimpa bukti berlawanan itu,
-        // karena kombinasi gejala umum (gatal + bersisik) bisa kebetulan cocok
-        // dengan salah satu dari 16 penyakit padahal foto menunjukkan kondisi
-        // yang sama sekali berbeda dan tidak pernah dinilai sistem.
-        if ($visualOutsideScope) {
+        // $visualUnreliable true berarti visual sempat dianalisis tapi hasilnya
+        // tidak bisa dipercaya - baik model AI eksplisit menolak (outside_scope)
+        // atau parsing gagal total (fallback indeks kemiripan visual, bukan
+        // provider yang tidak sempat dipanggil). CF gejala setinggi apa pun
+        // tidak boleh menimpa bukti berlawanan/tidak meyakinkan itu, karena
+        // kombinasi gejala umum (gatal + bersisik) bisa kebetulan cocok dengan
+        // salah satu dari 16 penyakit padahal foto menunjukkan kondisi yang
+        // sama sekali berbeda dan tidak pernah benar-benar dinilai sistem.
+        if ($visualUnreliable) {
             return ['F06', 'insufficient_confidence'];
         }
 
@@ -158,7 +163,7 @@ class FusionDecisionService
         float $textualCf,
         bool $visualAvailable,
         bool $hasRedFlags,
-        bool $visualOutsideScope = false
+        bool $visualUnreliable = false
     ): string {
         $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
         $cfPercent = sprintf('%.1f%%', $textualCf * 100);
@@ -201,10 +206,11 @@ class FusionDecisionService
         }
 
         if (! $visualAvailable || ! $visualDisease) {
-            // Bukti berlawanan (bukan sekadar ketiadaan bukti): model AI aktif
-            // menilai foto ini bukan salah satu dari 16 penyakit, sehingga CF
+            // Bukti berlawanan/tidak meyakinkan (bukan sekadar ketiadaan bukti):
+            // visual sempat dianalisis tapi hasilnya tidak bisa dipercaya (lihat
+            // ConsultationWorkflowService::visualIsUntrustworthy()), sehingga CF
             // gejala setinggi apa pun tidak boleh menghasilkan rekomendasi obat.
-            if ($visualOutsideScope) {
+            if ($visualUnreliable) {
                 return sprintf(
                     'Aturan F06: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, sehingga rekomendasi obat ditahan meski keyakinan gejala terhadap %s tinggi (CF %s). Disarankan konsultasi langsung untuk memastikan kondisi sebenarnya.',
                     $diseaseName,

@@ -704,6 +704,65 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi lanjutan (audit 2026-08-30, ditemukan lewat verifikasi ulang di
+     * production SETELAH perbaikan di atas dideploy): outside_scope hanya
+     * terisi true saat provider BERHASIL parsing JSON dan menolak dengan
+     * sengaja. Saat parsing gagal total, ai-service tetap jatuh ke
+     * dataset_fallback (validation_status degraded) TAPI outside_scope-nya
+     * default false - kasus produksi nyata DC-20260830-103442-SU6HF tetap
+     * merekomendasikan Clotrimazole/Miconazole untuk foto Vitiligo. Sinyal
+     * yang benar adalah validation_status 'degraded' itu sendiri, bukan
+     * cuma outside_scope.
+     */
+    public function test_degraded_visual_without_explicit_outside_scope_still_prevents_otc_recommendation(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'dataset_fallback',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'degraded',
+                    // Persis kasus produksi: provider gagal parsing sama sekali,
+                    // sehingga outside_scope tetap default false walau sistem
+                    // sebenarnya tidak tahu apa isi foto itu.
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => ['dermacerdas_ai tidak menghasilkan JSON kandidat yang valid; sistem memakai kandidat fallback dari indeks visual dataset.'],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Vitiligo Dua',
+            'complaint_text' => 'Muncul bercak putih di kulit sejak beberapa bulan, tidak gatal, tidak nyeri, tidak bersisik.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P4_GATAL' => 1.0,
+                'P3_HALUS' => 1.0,
+                'P2_CINCIN' => 1.0,
+                'P8_TENGAHBERSIH' => 1.0,
+                'P5_MINGGU' => 1.0,
+                'P7_KERINGAT' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame('insufficient_confidence', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+    }
+
+    /**
      * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
      * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
      * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini

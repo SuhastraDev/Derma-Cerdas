@@ -127,7 +127,7 @@ class FusionDecisionServiceTest extends TestCase
      * dengan gejala yang kebetulan sangat mirip Tinea Corporis (CF 99,9%).
      * Sebelum perbaikan ini, F06 murni berbasis CF teks tetap mengeluarkan
      * recommend_otc_unsupported untuk Tinea Corporis meski foto sama sekali
-     * tidak mendukungnya - visualOutsideScope adalah bukti BERLAWANAN
+     * tidak mendukungnya - visualUnreliable adalah bukti BERLAWANAN
      * (bukan sekadar ketiadaan bukti) dan harus menahan rekomendasi obat
      * berapa pun CF-nya.
      */
@@ -142,7 +142,7 @@ class FusionDecisionServiceTest extends TestCase
             visualScore: 0.0,
             visualAvailable: false,
             redFlagResult: ['has_red_flags' => false],
-            visualOutsideScope: true,
+            visualUnreliable: true,
         );
 
         $this->assertSame('F06', $result['fusion_rule_code']);
@@ -151,7 +151,7 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $result['explanation']);
     }
 
-    /** Tanpa visualOutsideScope, perilaku F06 lama (berbasis CF semata) tidak berubah. */
+    /** Tanpa visualUnreliable, perilaku F06 lama (berbasis CF semata) tidak berubah. */
     public function test_f06_visual_unavailable_without_outside_scope_keeps_cf_based_behavior(): void
     {
         $disease = $this->createDisease('TINEA_CORPORIS');
@@ -163,7 +163,7 @@ class FusionDecisionServiceTest extends TestCase
             visualScore: 0.0,
             visualAvailable: false,
             redFlagResult: ['has_red_flags' => false],
-            visualOutsideScope: false,
+            visualUnreliable: false,
         );
 
         $this->assertSame('recommend_otc_unsupported', $result['action']);
