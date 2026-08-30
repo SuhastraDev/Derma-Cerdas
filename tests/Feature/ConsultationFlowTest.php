@@ -562,6 +562,105 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi untuk kandidat visual di luar 16 penyakit cakupan (mis. golongan
+     * DatasetDiseaseMapper VIRAL_EDUCATION untuk kutil/molluscum) yang KALAH
+     * dari CF gejala tinggi terhadap salah satu 16 penyakit (F04). Sebelum
+     * perbaikan ini, temuan visual itu hanya muncul sebagai satu kalimat di
+     * explanation - sekarang wajib juga muncul sebagai secondary_visual_note
+     * TANPA mengubah disease/action/rekomendasi obat yang sudah benar.
+     */
+    public function test_out_of_scope_visual_candidate_adds_secondary_note_without_changing_the_otc_decision(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $outOfScopeGroup = $this->createOutOfScopeGroupDisease();
+
+        $this->mock(AiVisualService::class, function ($mock) use ($outOfScopeGroup): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [[
+                        'disease' => $outOfScopeGroup,
+                        'provider' => 'dermacerdas_ai',
+                        'visual_score' => 0.65,
+                        'visual_reason' => 'Pola benjolan kecil menyerupai lesi virus jinak.',
+                        'raw_response' => ['dataset_class_name' => 'Molluscum_Contagiosum'],
+                    ]],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Luar Cakupan',
+            'complaint_text' => 'Gatal sejak satu minggu, ruam melingkar di badan dan tepinya bersisik.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P4_GATAL' => 1.0,
+                'P3_HALUS' => 1.0,
+                'P2_CINCIN' => 1.0,
+                'P8_TENGAHBERSIH' => 1.0,
+                'P5_MINGGU' => 1.0,
+                'P7_KERINGAT' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+        $tineaCorporis = Disease::query()->where('code', 'TINEA_CORPORIS')->firstOrFail();
+
+        // Keputusan lama tetap sama persis: CF gejala tinggi terhadap Tinea
+        // Corporis menang lewat F04, obat tetap direkomendasikan untuknya.
+        $this->assertSame($tineaCorporis->id, $finalResult->disease_id);
+        $this->assertSame('F04', $finalResult->fusion_rule_code);
+        $this->assertSame('recommend_otc_mismatch', $finalResult->action);
+        $this->assertNotEmpty($finalResult->recommendations_snapshot);
+
+        // Tambahan barunya: catatan edukasi tentang temuan visual di luar
+        // cakupan, terpisah dari keputusan di atas.
+        $this->assertNotNull($finalResult->secondary_visual_note);
+        $this->assertSame(
+            $outOfScopeGroup->name_indonesian,
+            $finalResult->secondary_visual_note['disease_name_indonesian']
+        );
+        $this->assertSame(0.65, (float) $finalResult->secondary_visual_note['visual_score']);
+
+        $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
+            ->assertOk();
+    }
+
+    /**
+     * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
+     * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
+     * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini
+     * dengan bentuk yang persis sama dengan DatasetDiseaseMapper::payloadFor():
+     * aktif, tanpa satu pun aturan gejala/CF.
+     */
+    private function createOutOfScopeGroupDisease(): Disease
+    {
+        return Disease::query()->updateOrCreate(
+            ['code' => 'VIRAL_EDUCATION'],
+            [
+                'name' => 'Benign viral lesions education',
+                'slug' => 'viral-education',
+                'name_indonesian' => 'Lesi virus jinak untuk edukasi',
+                'description' => 'Kelompok lesi virus jinak seperti kutil atau molluscum yang umumnya tidak menjadi target obat OTC otomatis.',
+                'source_note' => 'DermNet A-Z viral infections and benign lesions: https://dermnetnz.org/topics',
+                'severity_scope' => 'mild',
+                'default_action' => 'educate_only',
+                'is_active' => true,
+            ]
+        );
+    }
+
+    /**
      * Psoriasis kini termasuk 15 kelas ruang lingkup dan sudah diseed lengkap
      * dengan pemetaan dataset serta profil Certainty Factor-nya, sehingga tidak
      * perlu - dan tidak boleh - dibuat ulang di sini.

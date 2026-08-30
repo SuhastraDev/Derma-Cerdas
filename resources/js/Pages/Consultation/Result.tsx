@@ -59,6 +59,12 @@ type FinalResult = {
         source_note: string | null;
         is_outside_validated_scope: boolean;
     } | null;
+    secondary_visual_note: {
+        disease_name_indonesian: string;
+        description: string | null;
+        source_note: string | null;
+        visual_score: number;
+    } | null;
 } | null;
 
 type RedFlag = {
@@ -98,6 +104,64 @@ type ResultProps = {
 
 function percent(value: number): string {
     return `${Math.round(value * 100)}%`;
+}
+
+type SourceLink = { label: string; url: string | null };
+
+// source_note disimpan sebagai teks "Label: url; Label2: url2" (lihat
+// DatasetDiseaseMapper::GROUPS). Dipecah di sini supaya tetap tampil sebagai
+// link yang bisa diklik, bukan teks URL mentah yang tidak bisa ditekan.
+function parseSourceLinks(sourceNote: string | null): SourceLink[] {
+    if (!sourceNote) {
+        return [];
+    }
+
+    return sourceNote
+        .split(';')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+            const separatorIndex = entry.indexOf('https://');
+            const httpIndex = separatorIndex === -1 ? entry.indexOf('http://') : separatorIndex;
+
+            if (httpIndex === -1) {
+                return { label: entry, url: null };
+            }
+
+            const label = entry.slice(0, httpIndex).replace(/:\s*$/, '').trim();
+            const url = entry.slice(httpIndex).trim();
+
+            return { label: label || url, url };
+        });
+}
+
+function SourceLinkList({ sourceNote }: { sourceNote: string | null }) {
+    const links = parseSourceLinks(sourceNote);
+
+    if (links.length === 0) {
+        return null;
+    }
+
+    return (
+        <ul className="mt-2 space-y-1">
+            {links.map((link) => (
+                <li key={link.label}>
+                    {link.url ? (
+                        <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-orange-700 underline decoration-orange-300 underline-offset-2 hover:text-orange-800"
+                        >
+                            {link.label}
+                        </a>
+                    ) : (
+                        link.label
+                    )}
+                </li>
+            ))}
+        </ul>
+    );
 }
 
 function actionCopy(action: string | null): {
@@ -596,14 +660,50 @@ export default function Result({
                             </div>
                         )}
                         {finalResult.education.source_note && (
-                            <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500">
-                                Sumber: {finalResult.education.source_note}
-                            </p>
+                            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-500">
+                                <span className="font-semibold uppercase tracking-wide">
+                                    Sumber
+                                </span>
+                                <SourceLinkList sourceNote={finalResult.education.source_note} />
+                            </div>
                         )}
                         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
                             {finalResult.education.is_outside_validated_scope
                                 ? 'Ini adalah informasi umum, bukan diagnosis pasti atau rekomendasi obat. Sistem belum memiliki basis pengetahuan gejala tervalidasi untuk kondisi ini — tetap konsultasikan ke dokter atau tenaga kesehatan untuk kepastian.'
                                 : 'Ini adalah informasi umum, bukan resep atau rekomendasi beli obat sendiri. Kondisi ini butuh penilaian atau penanganan langsung oleh dokter, jadi sistem tidak menampilkan obat bebas untuk kondisi ini.'}
+                        </p>
+                    </section>
+                )}
+
+                {finalResult?.secondary_visual_note && (
+                    <section className="mt-6 rounded-2xl border border-sky-200 bg-sky-50/60 p-5 shadow-sm">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-sm font-semibold text-sky-700">
+                                    Catatan visual tambahan
+                                </p>
+                                <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                                    Foto juga menyerupai {finalResult.secondary_visual_note.disease_name_indonesian}
+                                    {' '}({percent(finalResult.secondary_visual_note.visual_score)})
+                                </h2>
+                            </div>
+                            <BookOpen className="h-6 w-6 text-sky-600" />
+                        </div>
+                        {finalResult.secondary_visual_note.description && (
+                            <p className="mt-4 text-sm leading-6 text-slate-700">
+                                {finalResult.secondary_visual_note.description}
+                            </p>
+                        )}
+                        {finalResult.secondary_visual_note.source_note && (
+                            <div className="mt-4 rounded-lg border border-sky-200 bg-white p-4 text-xs leading-5 text-slate-500">
+                                <span className="font-semibold uppercase tracking-wide">
+                                    Sumber
+                                </span>
+                                <SourceLinkList sourceNote={finalResult.secondary_visual_note.source_note} />
+                            </div>
+                        )}
+                        <p className="mt-4 rounded-lg border border-sky-200 bg-white p-4 text-sm leading-6 text-sky-950">
+                            Hasil dan rekomendasi di atas tetap disandarkan pada gejala yang kamu jawab, bukan pada catatan ini. Ini murni informasi tambahan karena foto juga menyerupai kondisi lain di luar 16 penyakit yang dikenali sistem — bukan diagnosis, dan sebaiknya dikonfirmasi ke tenaga kesehatan bila ragu.
                         </p>
                     </section>
                 )}

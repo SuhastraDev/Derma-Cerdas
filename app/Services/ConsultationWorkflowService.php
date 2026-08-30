@@ -402,7 +402,50 @@ class ConsultationWorkflowService
             'fusion_rule_code' => $decision['fusion_rule_code'],
             'explanation' => $decision['explanation'],
             'recommendations_snapshot' => $this->recommendationsSnapshot($finalDisease, $decision['can_recommend_medicine']),
+            'secondary_visual_note' => $this->secondaryVisualNote($finalDisease, $visualDisease, $visualScore, $hasValidatedVisual, $hasRedFlags),
         ]);
+    }
+
+    /**
+     * Info edukasi murni tambahan untuk kandidat visual di luar 16 penyakit
+     * cakupan (tanpa basis gejala/CF sendiri, lihat DatasetDiseaseMapper) yang
+     * TIDAK menjadi disease_id hasil akhir - mis. F04, di mana CF gejala
+     * mengalahkan kandidat visual. Sengaja tidak menyentuh $decision atau
+     * $finalDisease sama sekali: tujuannya hanya menambah info yang sudah ada
+     * di consultation_visual_results (nama + skor) dengan deskripsi dan
+     * sumber rujukan, bukan mengubah aksi/rekomendasi obat yang sudah dihitung.
+     *
+     * @return array{disease_name_indonesian: string, description: string|null, source_note: string|null, visual_score: float}|null
+     */
+    private function secondaryVisualNote(
+        Disease $finalDisease,
+        ?Disease $visualDisease,
+        float $visualScore,
+        bool $hasValidatedVisual,
+        bool $hasRedFlags
+    ): ?array {
+        if ($hasRedFlags || ! $hasValidatedVisual || ! $visualDisease) {
+            return null;
+        }
+
+        if ($visualDisease->is($finalDisease) || $visualScore < self::VISUAL_STRONG) {
+            return null;
+        }
+
+        // Penyakit di luar 16 cakupan tidak pernah punya basis gejala/CF
+        // (lihat DatabaseSeeder::retireOutOfScopeDiseases). Kandidat visual
+        // yang PUNYA basis gejala sendiri sudah cukup terwakili lewat
+        // fusion_rule_code (F04/F05) dan panel "Kandidat visual" biasa.
+        if ($visualDisease->symptomRules()->exists()) {
+            return null;
+        }
+
+        return [
+            'disease_name_indonesian' => $visualDisease->name_indonesian ?: $visualDisease->name,
+            'description' => $visualDisease->description,
+            'source_note' => $visualDisease->source_note,
+            'visual_score' => $visualScore,
+        ];
     }
 
     /**

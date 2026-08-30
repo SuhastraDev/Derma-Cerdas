@@ -199,6 +199,7 @@ class ConsultationController extends Controller
                     'source_note' => $finalResult->disease?->source_note,
                     'is_outside_validated_scope' => in_array($finalResult->fusion_rule_code, ['F08', 'F09'], true),
                 ] : null,
+                'secondary_visual_note' => $finalResult->secondary_visual_note,
             ] : null,
             'redFlags' => $consultation->redFlags
                 ->filter(fn ($item): bool => (bool) $item->detected)
