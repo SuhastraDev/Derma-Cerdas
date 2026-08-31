@@ -68,6 +68,7 @@ type FinalResult = {
         source_note: string | null;
         visual_score: number;
     } | null;
+    label_suppressed: boolean;
 } | null;
 
 type RedFlag = {
@@ -291,10 +292,11 @@ export default function Result({
 }: ResultProps) {
     const action = actionCopy(finalResult?.action ?? consultation.final_action);
     const ActionIcon = action.Icon;
-    const diseaseName =
-        finalResult?.disease_name_indonesian ??
-        finalResult?.disease_name ??
-        'Belum tersedia';
+    const diseaseName = finalResult?.label_suppressed
+        ? 'Belum dapat dipastikan'
+        : (finalResult?.disease_name_indonesian ??
+              finalResult?.disease_name ??
+              'Belum tersedia');
     const hasValidatedVisual = consultation.visual_validation?.status === 'valid';
 
     return (

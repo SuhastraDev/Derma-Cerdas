@@ -148,7 +148,9 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertSame('F06', $result['fusion_rule_code']);
         $this->assertSame('insufficient_confidence', $result['action']);
         $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertTrue($result['label_suppressed']);
         $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $result['explanation']);
+        $this->assertStringNotContainsString('tinea corporis', $result['explanation']);
     }
 
     /** Tanpa visualUnreliable, perilaku F06 lama (berbasis CF semata) tidak berubah. */
@@ -168,6 +170,57 @@ class FusionDecisionServiceTest extends TestCase
 
         $this->assertSame('recommend_otc_unsupported', $result['action']);
         $this->assertTrue($result['can_recommend_medicine']);
+        $this->assertFalse($result['label_suppressed']);
+    }
+
+    /**
+     * Regresi produksi 2026-08-30: foto bisul (di luar 16 penyakit) dijawab
+     * seadanya, dan satu-satunya opsi bentuk yang "paling mendekati"
+     * (Benjolan tunggal mengkilap, bobot pakar 0,80 untuk BCC) sendirian
+     * sudah cukup melewati HIGH_CF. textualUnreliable menandai bukti setipis
+     * itu (dari ConsultationWorkflowService, keluasan gejala) sehingga BCC
+     * tidak boleh ditampilkan sebagai nama pasti - meski BCC bergolongan
+     * refer (yang tetap benar secara aksi: tetap disarankan periksa).
+     */
+    public function test_f06_textual_unreliable_suppresses_label_even_for_refer_category_disease(): void
+    {
+        $bcc = $this->createDisease('BASAL_CELL_CARCINOMA', 'refer');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $bcc,
+            textualCf: 0.80,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => false],
+            textualUnreliable: true,
+        );
+
+        $this->assertSame('refer', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertTrue($result['label_suppressed']);
+        $this->assertStringNotContainsString('basal cell carcinoma', $result['explanation']);
+        $this->assertStringContainsString('sedikit gejala', $result['explanation']);
+    }
+
+    /** Tanpa textualUnreliable, penyakit refer tetap tampil apa adanya (perilaku lama). */
+    public function test_f06_textual_reliable_refer_disease_keeps_showing_name(): void
+    {
+        $bcc = $this->createDisease('BASAL_CELL_CARCINOMA', 'refer');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $bcc,
+            textualCf: 0.80,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => false],
+            textualUnreliable: false,
+        );
+
+        $this->assertSame('refer', $result['action']);
+        $this->assertFalse($result['label_suppressed']);
+        $this->assertStringContainsString('basal cell carcinoma', $result['explanation']);
     }
 
     public function test_f07_red_flags_force_refer_even_when_matching_and_cf_is_high(): void

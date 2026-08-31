@@ -161,7 +161,12 @@ class ConsultationController extends Controller
     {
         $consultation = $workflow->loadResult($sessionCode);
         $finalResult = $consultation->finalResults->sortByDesc('fusion_score')->first();
-        $comparisonImages = $this->datasetComparisonImages($finalResult?->disease);
+        // Contoh dataset menampilkan nama class (mis. "Basal_Cell_Carcinoma") sebagai
+        // caption - kalau nama penyakit sedang disembunyikan karena bukti tipis
+        // (label_suppressed), jangan bocorkan lewat panel ini juga.
+        $comparisonImages = ($finalResult && ! $finalResult->label_suppressed)
+            ? $this->datasetComparisonImages($finalResult->disease)
+            : [];
 
         return Inertia::render('Consultation/Result', [
             'consultation' => [
@@ -193,13 +198,19 @@ class ConsultationController extends Controller
                 // sebelumnya penyakit yang cocok lewat jalur normal F01-F07 (mis.
                 // Psoriasis lewat gejala+visual) tidak pernah menampilkan info ini
                 // sama sekali, padahal aksinya juga educate_only.
-                'education' => in_array($finalResult->action, ['educate_only', 'refer'], true) ? [
+                // label_suppressed berarti nama penyakit sengaja disembunyikan
+                // dari "Kemungkinan utama" karena buktinya tipis (lihat
+                // ConsultationWorkflowService::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL) -
+                // deskripsi penyakit spesifik di sini akan membocorkan nama yang
+                // sama, jadi ikut disembunyikan.
+                'education' => (! $finalResult->label_suppressed && in_array($finalResult->action, ['educate_only', 'refer'], true)) ? [
                     'description' => $finalResult->disease?->description,
                     'medical_treatment_note' => $finalResult->disease?->medical_treatment_note,
                     'source_note' => $finalResult->disease?->source_note,
                     'is_outside_validated_scope' => in_array($finalResult->fusion_rule_code, ['F08', 'F09'], true),
                 ] : null,
                 'secondary_visual_note' => $finalResult->secondary_visual_note,
+                'label_suppressed' => (bool) $finalResult->label_suppressed,
             ] : null,
             'redFlags' => $consultation->redFlags
                 ->filter(fn ($item): bool => (bool) $item->detected)
@@ -257,7 +268,9 @@ class ConsultationController extends Controller
     {
         $consultation = $workflow->loadResult($sessionCode);
         $finalResult = $consultation->finalResults->sortByDesc('fusion_score')->first();
-        $comparisonImages = $this->datasetComparisonImages($finalResult?->disease);
+        $comparisonImages = ($finalResult && ! $finalResult->label_suppressed)
+            ? $this->datasetComparisonImages($finalResult->disease)
+            : [];
         $uploadedImageUrl = $consultation->image_path ? '/storage/'.$consultation->image_path : null;
 
         $complaintSummary = $consultation->complaint_features['summary'] ?? [];

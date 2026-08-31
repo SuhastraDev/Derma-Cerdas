@@ -18,6 +18,7 @@ class ConsultationFinalResult extends Model
         'explanation',
         'recommendations_snapshot',
         'secondary_visual_note',
+        'label_suppressed',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class ConsultationFinalResult extends Model
         'fusion_score' => 'decimal:2',
         'recommendations_snapshot' => 'array',
         'secondary_visual_note' => 'array',
+        'label_suppressed' => 'boolean',
     ];
 
     public function consultation(): BelongsTo

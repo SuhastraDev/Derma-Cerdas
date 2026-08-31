@@ -21,6 +21,21 @@ class ConsultationWorkflowService
     /** Ambang kandidat visual dianggap kuat sebelum boleh menggeser keputusan. */
     private const VISUAL_STRONG = 0.55;
 
+    /**
+     * Jumlah minimal gejala BERBEDA yang harus menyumbang CF ke kandidat teks
+     * teratas sebelum CF-nya dianggap cukup meyakinkan untuk menyebut nama
+     * penyakit spesifik saat F06 (visual tidak tersedia/tidak bisa dipercaya).
+     *
+     * Regresi produksi 2026-08-30: penyakit di luar 16 (mis. bisul) dijawab
+     * seadanya, dan SATU jawaban yang "paling mendekati" (mis. "benjolan
+     * tunggal mengkilap" untuk Basal Cell Carcinoma, bobot pakar 0,80) sudah
+     * cukup sendirian melewati HIGH_CF (0,60) - karena tidak ada satu pun
+     * gejala di 16 penyakit yang ditandai wajib (is_required selalu false,
+     * lihat DatabaseSeeder::seedQuestionRules()). CF akhir bisa tinggi tanpa
+     * benar-benar dibangun dari bukti yang saling menguatkan.
+     */
+    private const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 2;
+
     public function __construct(
         private readonly CertaintyFactorService $certaintyFactorService,
         private readonly RedFlagService $redFlagService,
@@ -362,6 +377,7 @@ class ConsultationWorkflowService
         /** @var Disease $textualDisease */
         $textualDisease = $topTextual['disease'];
         $textualCf = (float) ($topTextual['textual_cf'] ?? 0.0);
+        $textualUnreliable = count($topTextual['matched_symptoms'] ?? []) < self::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL;
 
         // Pv: kandidat visual teratas. Kosong berarti F06 (citra tak dapat dianalisis / di luar ruang lingkup).
         $topVisual = $visualCandidates[0] ?? null;
@@ -421,6 +437,10 @@ class ConsultationWorkflowService
                 // Hanya relevan saat visual memang tidak tervalidasi - relevansinya
                 // dipastikan di dalam FusionDecisionService sendiri.
                 visualUnreliable: $visualUnreliable,
+                // CF gejala dibangun dari terlalu sedikit gejala berbeda untuk
+                // menyebut nama penyakit spesifik dengan yakin - lihat konstanta
+                // MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL di atas.
+                textualUnreliable: $textualUnreliable,
             );
             $finalDisease = $textualDisease;
         }
@@ -436,6 +456,7 @@ class ConsultationWorkflowService
             'explanation' => $decision['explanation'],
             'recommendations_snapshot' => $this->recommendationsSnapshot($finalDisease, $decision['can_recommend_medicine']),
             'secondary_visual_note' => $this->secondaryVisualNote($finalDisease, $visualDisease, $visualScore, $hasValidatedVisual, $hasRedFlags),
+            'label_suppressed' => $decision['label_suppressed'] ?? false,
         ]);
     }
 

@@ -61,7 +61,7 @@
         <div class="content">
             @if ($finalResult)
                 <h2>Kemungkinan utama</h2>
-                <p style="font-size: 20px;"><strong>{{ $finalResult->disease?->name_indonesian ?: $finalResult->disease?->name }}</strong></p>
+                <p style="font-size: 20px;"><strong>{{ $finalResult->label_suppressed ? 'Belum dapat dipastikan' : ($finalResult->disease?->name_indonesian ?: $finalResult->disease?->name) }}</strong></p>
                 <div class="grid">
                     <div class="card"><div class="label">Visual</div><div class="value">{{ round($finalResult->visual_score * 100) }}%</div></div>
                     <div class="card"><div class="label">Gejala CF</div><div class="value">{{ round($finalResult->textual_cf * 100) }}%</div></div>

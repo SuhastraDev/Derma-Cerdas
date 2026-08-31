@@ -34,6 +34,12 @@ class FusionDecisionService
      *                                    beda dari $visualAvailable false karena provider belum sempat
      *                                    dipanggil sama sekali (ketiadaan bukti murni). Hanya dipakai saat
      *                                    $visualAvailable false (F06) - lihat textOnlyRule().
+     * @param  bool  $textualUnreliable  True jika kandidat teks berkeyakinan tertinggi dibangun dari bukti
+     *                                    yang terlalu tipis (lihat ConsultationWorkflowService, keluasan
+     *                                    minimal gejala) - mis. cuma 1 gejala generik yang kebetulan cocok,
+     *                                    bukan beberapa gejala independen yang saling menguatkan. CF akhirnya
+     *                                    bisa saja tinggi, tapi tidak cukup meyakinkan untuk menyebut nama
+     *                                    penyakit spesifik. Hanya dipakai saat $visualAvailable false (F06).
      */
     public function decide(
         Disease $textualDisease,
@@ -42,7 +48,8 @@ class FusionDecisionService
         float $visualScore,
         bool $visualAvailable,
         array $redFlagResult = [],
-        bool $visualUnreliable = false
+        bool $visualUnreliable = false,
+        bool $textualUnreliable = false
     ): array {
         $textualCf = $this->clamp($textualCf);
         $visualScore = $this->clamp($visualScore);
@@ -54,9 +61,20 @@ class FusionDecisionService
             $visualDisease,
             $visualAvailable,
             $hasRedFlags,
-            $visualUnreliable
+            $visualUnreliable,
+            $textualUnreliable
         );
         $action = $this->enforceDiseaseScope($textualDisease, $action);
+
+        // Nama penyakit spesifik disembunyikan dari tampilan utama HANYA saat
+        // F06 dipaksa turun oleh bukti yang tidak bisa dipercaya (visual atau
+        // teks) - beda dari CF rendah biasa (F06 dengan banyak gejala dijawab
+        // tapi memang lemah), yang tetap layak menampilkan nama sebagai
+        // informasi awal. disease_id/action tetap tersimpan apa adanya untuk
+        // audit - ini murni soal apa yang ditonjolkan ke pengguna.
+        $labelSuppressed = (! $visualAvailable || ! $visualDisease)
+            && ! $hasRedFlags
+            && ($visualUnreliable || $textualUnreliable);
 
         return [
             'disease' => $textualDisease,
@@ -66,6 +84,7 @@ class FusionDecisionService
             'fusion_score_percent' => $this->round($textualCf * 100),
             'fusion_rule_code' => $ruleCode,
             'action' => $action,
+            'label_suppressed' => $labelSuppressed,
             'can_recommend_medicine' => in_array($action, [
                 'recommend_otc',
                 'recommend_otc_observe',
@@ -80,7 +99,8 @@ class FusionDecisionService
                 $textualCf,
                 $visualAvailable,
                 $hasRedFlags,
-                $visualUnreliable
+                $visualUnreliable,
+                $textualUnreliable
             ),
         ];
     }
@@ -94,7 +114,8 @@ class FusionDecisionService
         ?Disease $visualDisease,
         bool $visualAvailable,
         bool $hasRedFlags,
-        bool $visualUnreliable = false
+        bool $visualUnreliable = false,
+        bool $textualUnreliable = false
     ): array {
         // F07: tanda bahaya menggantikan seluruh aturan lainnya.
         if ($hasRedFlags) {
@@ -103,7 +124,7 @@ class FusionDecisionService
 
         // F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup.
         if (! $visualAvailable || ! $visualDisease) {
-            return $this->textOnlyRule($textualCf, $visualUnreliable);
+            return $this->textOnlyRule($textualCf, $visualUnreliable || $textualUnreliable);
         }
 
         $matches = $visualDisease->is($textualDisease);
@@ -163,7 +184,8 @@ class FusionDecisionService
         float $textualCf,
         bool $visualAvailable,
         bool $hasRedFlags,
-        bool $visualUnreliable = false
+        bool $visualUnreliable = false,
+        bool $textualUnreliable = false
     ): string {
         $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
         $cfPercent = sprintf('%.1f%%', $textualCf * 100);
@@ -172,6 +194,31 @@ class FusionDecisionService
             return sprintf(
                 'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan (kandidat gejala teratas: %s, CF %s).',
                 $diseaseName,
+                $cfPercent
+            );
+        }
+
+        // Diperiksa SEBELUM cabang golongan penyakit di bawah (refer/educate_only),
+        // karena penyakit golongan refer (mis. BCC) akan selalu masuk cabang
+        // "Scope rujukan" itu duluan - kalau tidak dicegat di sini, pesan bukti
+        // tipis tidak akan pernah terbaca untuk golongan itu, padahal justru di
+        // situ paling berisiko (nama kanker ditampilkan dari bukti yang tipis).
+        if ((! $visualAvailable || ! $visualDisease) && ! $hasRedFlags && ($visualUnreliable || $textualUnreliable)) {
+            // Nama penyakit sengaja TIDAK disebut di sini (beda dari pesan F06
+            // biasa di bawah) - kalau nama disembunyikan dari "Kemungkinan
+            // utama" karena buktinya tipis, menyebutnya di sini lewat "Alasan
+            // sistem" cuma membocorkannya lewat pintu belakang.
+            if ($visualUnreliable) {
+                return sprintf(
+                    'Aturan %s: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, sehingga rekomendasi obat ditahan meski keyakinan gejala terhadap salah satu kandidat cukup tinggi (CF %s). Disarankan konsultasi langsung untuk memastikan kondisi sebenarnya, bukan berdasarkan satu nama penyakit tertentu.',
+                    $ruleCode,
+                    $cfPercent
+                );
+            }
+
+            return sprintf(
+                'Aturan %s: jawaban gejala mengarah ke salah satu kandidat (CF %s), tetapi cuma dibangun dari sedikit gejala yang cocok - belum cukup spesifik untuk memastikan salah satu dari 16 kondisi yang dikenali sistem. Disarankan konsultasi langsung untuk kepastian, bukan berdasarkan satu nama penyakit tertentu.',
+                $ruleCode,
                 $cfPercent
             );
         }
@@ -206,18 +253,9 @@ class FusionDecisionService
         }
 
         if (! $visualAvailable || ! $visualDisease) {
-            // Bukti berlawanan/tidak meyakinkan (bukan sekadar ketiadaan bukti):
-            // visual sempat dianalisis tapi hasilnya tidak bisa dipercaya (lihat
-            // ConsultationWorkflowService::visualIsUntrustworthy()), sehingga CF
-            // gejala setinggi apa pun tidak boleh menghasilkan rekomendasi obat.
-            if ($visualUnreliable) {
-                return sprintf(
-                    'Aturan F06: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, sehingga rekomendasi obat ditahan meski keyakinan gejala terhadap %s tinggi (CF %s). Disarankan konsultasi langsung untuk memastikan kondisi sebenarnya.',
-                    $diseaseName,
-                    $cfPercent
-                );
-            }
-
+            // Cabang bukti tak bisa dipercaya (visual maupun teks) sudah ditangani
+            // di awal fungsi ini sebelum cabang golongan penyakit - titik ini
+            // hanya tercapai kalau visual/teks masih dianggap layak dipakai.
             return match ($action) {
                 'recommend_otc_unsupported' => sprintf(
                     'Aturan F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup, sehingga keputusan disandarkan pada gejala (%s, CF %s) dengan status keyakinan terbatas karena tidak didukung analisis visual.',

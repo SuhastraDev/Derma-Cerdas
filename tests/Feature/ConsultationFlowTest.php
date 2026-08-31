@@ -763,6 +763,69 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi produksi 2026-08-30: pengguna mengunggah foto bisul (di luar 16
+     * penyakit) dan menjawab pertanyaan seadanya. Satu-satunya opsi bentuk
+     * yang "paling mendekati" (Benjolan tunggal mengkilap) kebetulan menjadi
+     * gejala paling khas Basal Cell Carcinoma (bobot pakar 0,80) - jawaban
+     * itu SENDIRIAN sudah melewati HIGH_CF, sehingga sistem sebelumnya
+     * menampilkan "Karsinoma sel basal" walau cuma 1 dari 7 gejala BCC yang
+     * cocok. Action refer tetap benar (aman), tapi nama spesifiknya harus
+     * disembunyikan karena buktinya terlalu tipis untuk memastikan itu.
+     *
+     * outside_scope sengaja diset false di sini (beda dari kasus Vitiligo)
+     * supaya textualUnreliable teruji terpisah dari visualUnreliable - kalau
+     * keduanya true sekaligus, tidak jelas mekanisme mana yang sebenarnya
+     * menahan labelnya.
+     */
+    public function test_single_generic_symptom_match_suppresses_disease_label_even_for_refer_category(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Bisul',
+            'complaint_text' => 'Ada benjolan di kulit, saya jawab seadanya karena tidak ada pilihan yang cocok.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P2_BENJOLAN' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+        $bcc = Disease::query()->where('code', 'BASAL_CELL_CARCINOMA')->firstOrFail();
+
+        // disease_id tetap tersimpan apa adanya untuk audit - yang berubah
+        // cuma apa yang ditonjolkan ke pengguna (label_suppressed).
+        $this->assertSame($bcc->id, $finalResult->disease_id);
+        $this->assertSame('refer', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+        $this->assertTrue($finalResult->label_suppressed);
+        $this->assertStringNotContainsString('Karsinoma sel basal', $finalResult->explanation);
+
+        $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
+            ->assertOk();
+    }
+
+    /**
      * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
      * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
      * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini
