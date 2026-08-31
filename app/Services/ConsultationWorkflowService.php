@@ -32,14 +32,29 @@ class ConsultationWorkflowService
      * Carcinoma, bobot pakar 0,80) sudah cukup sendirian melewati HIGH_CF -
      * tidak ada satu pun gejala di 16 penyakit yang ditandai wajib.
      *
-     * Ambang semula 2, tetapi kasus produksi lanjutan menunjukkan 2 gejala
-     * generik (mis. "benjolan mengkilap" + "hanya di satu tempat" - dua ciri
-     * yang juga berlaku untuk bisul biasa) masih bisa mengumpulkan CF 92%
-     * untuk BCC padahal visual justru mengarah ke Jerawat/Impetigo. Dinaikkan
-     * ke 3 supaya kombinasi generik-tapi-kebetulan-cocok seperti itu tetap
-     * dianggap tipis.
+     * Menaikkan angka ini saja terbukti permainan kucing-tikus: kasus produksi
+     * lanjutan (sesi DC-20260831-150845-TQNB0) menunjukkan pengguna dengan
+     * BENAR memilih "Tidak yakin/tidak cocok" untuk bentuk, permukaan, rasa,
+     * DAN durasi (P2-P5) - tapi CF Keloid tetap 87% cuma dari 3 gejala
+     * KONTEKSTUAL (lokasi "badan", sebaran "satu tempat", usia "remaja") yang
+     * juga kebetulan berlaku untuk bisul biasa. Lihat DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES.
      */
     private const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 3;
+
+    /**
+     * Kelompok pertanyaan P2 (bentuk), P3 (permukaan/sisik), P4 (rasa), dan P5
+     * (perjalanan waktu) menggambarkan KARAKTER lesi itu sendiri - inilah yang
+     * sebenarnya membedakan satu penyakit dari yang lain. P1 (lokasi), P6
+     * (sebaran), P7 (pemicu), dan P9 (usia) itu kontekstual: hampir semua
+     * penyakit BISA muncul "di badan", "di satu tempat saja", "tanpa pemicu
+     * jelas", atau "pada usia berapa pun" - termasuk kondisi yang sama sekali
+     * di luar 16 penyakit cakupan. CF yang dibangun murni dari kelompok
+     * kontekstual, tanpa satu pun dari kelompok deskriptif, tetap dianggap
+     * tipis berapa pun jumlah gejalanya - lihat komentar di atas.
+     *
+     * @var array<int, string>
+     */
+    private const DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES = ['P2', 'P3', 'P4', 'P5'];
 
     public function __construct(
         private readonly CertaintyFactorService $certaintyFactorService,
@@ -171,6 +186,44 @@ class ConsultationWorkflowService
     {
         return ($visualAnalysis['validation_status'] ?? null) === 'degraded'
             || (bool) ($visualAnalysis['outside_scope'] ?? false);
+    }
+
+    /**
+     * Bukti teks dianggap tipis kalau (a) terlalu sedikit gejala BERBEDA yang
+     * cocok, ATAU (b) tidak satu pun yang cocok berasal dari kelompok
+     * deskriptif (bentuk/permukaan/rasa/durasi - lihat
+     * DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES). Syarat (b) yang menutup celah:
+     * beberapa gejala kontekstual (lokasi, sebaran, pemicu, usia) bisa saja
+     * jumlahnya cukup banyak tapi tidak satu pun benar-benar menggambarkan
+     * ciri lesi itu sendiri, sehingga tetap bisa kebetulan cocok dengan
+     * kondisi apa pun di luar 16 penyakit cakupan.
+     *
+     * @param  array<int, array{symptom_code?: string|null}>  $matchedSymptoms
+     */
+    private function textualEvidenceIsThin(array $matchedSymptoms): bool
+    {
+        if (count($matchedSymptoms) < self::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL) {
+            return true;
+        }
+
+        foreach ($matchedSymptoms as $match) {
+            if (in_array($this->symptomGroupPrefix((string) ($match['symptom_code'] ?? '')), self::DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Mengambil awalan kelompok pertanyaan dari kode gejala, mis. "P2" dari
+     * "P2_CINCIN". Kode gejala di luar bank pertanyaan 16-kelas (mis. dari
+     * fixture pengujian lama) mengembalikan string kosong, yang aman karena
+     * tidak akan pernah cocok dengan DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES.
+     */
+    private function symptomGroupPrefix(string $symptomCode): string
+    {
+        return preg_match('/^(P\d+)_/', $symptomCode, $matches) === 1 ? $matches[1] : '';
     }
 
     /**
@@ -382,7 +435,7 @@ class ConsultationWorkflowService
         /** @var Disease $textualDisease */
         $textualDisease = $topTextual['disease'];
         $textualCf = (float) ($topTextual['textual_cf'] ?? 0.0);
-        $textualUnreliable = count($topTextual['matched_symptoms'] ?? []) < self::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL;
+        $textualUnreliable = $this->textualEvidenceIsThin($topTextual['matched_symptoms'] ?? []);
 
         // Pv: kandidat visual teratas. Kosong berarti F06 (citra tak dapat dianalisis / di luar ruang lingkup).
         $topVisual = $visualCandidates[0] ?? null;

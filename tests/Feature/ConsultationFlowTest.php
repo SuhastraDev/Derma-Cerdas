@@ -900,6 +900,74 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi produksi lanjutan (sesi DC-20260831-150845-TQNB0): pengguna
+     * dengan BENAR memilih "Tidak yakin/tidak cocok" untuk bentuk, permukaan,
+     * rasa, DAN durasi (P2-P5) karena memang tidak ada yang menggambarkan
+     * bisulnya - tapi CF Keloid tetap 87% dari 3 gejala KONTEKSTUAL saja
+     * (lokasi "badan", sebaran "satu tempat", usia "remaja"), yang juga
+     * kebetulan berlaku untuk bisul biasa. Ambang jumlah gejala saja (>=3)
+     * tidak cukup di sini karena pas terpenuhi tanpa satu pun bukti
+     * deskriptif - textualEvidenceIsThin() harus menolaknya lewat syarat
+     * kelompok deskriptif, bukan cuma hitungan.
+     */
+    public function test_contextual_only_symptoms_without_any_descriptive_match_stay_thin_despite_meeting_the_count(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $jerawat = Disease::query()->where('code', 'ACNE_VULGARIS')->firstOrFail();
+
+        $this->mock(AiVisualService::class, function ($mock) use ($jerawat): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [[
+                        'disease' => $jerawat,
+                        'provider' => 'dermacerdas_ai',
+                        'visual_score' => 0.85,
+                        'visual_reason' => 'Pustula (kepala putih) pada bintil merah khas jerawat.',
+                        'raw_response' => [],
+                    ]],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+
+            $mock->shouldReceive('assessRedFlags')->andReturn([]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Bisul Tiga',
+            'complaint_text' => 'benjolan pada kulit yang berwarna merah, berisi nanah, dan terasa nyeri.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P6_SETEMPAT' => 1.0,
+                'P9_REMAJA' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([
+                'SEVERE_PAIN' => true,
+                'PUS_OR_WIDE_INFECTION' => true,
+            ]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+        $keloid = Disease::query()->where('code', 'KELOID')->firstOrFail();
+
+        $this->assertSame('F07', $finalResult->fusion_rule_code);
+        $this->assertSame('refer', $finalResult->action);
+        $this->assertSame($keloid->id, $finalResult->disease_id);
+        $this->assertTrue($finalResult->label_suppressed);
+        $this->assertStringNotContainsString('Keloid', $finalResult->explanation);
+    }
+
+    /**
      * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
      * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
      * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini
