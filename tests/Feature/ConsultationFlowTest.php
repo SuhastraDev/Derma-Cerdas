@@ -805,25 +805,25 @@ class ConsultationFlowTest extends TestCase
 
         $this->post(route('consultation.store'), [
             'visitor_name' => 'Pengguna Bisul',
-            'complaint_text' => 'Ada benjolan di kulit, saya jawab seadanya karena tidak ada pilihan yang cocok.',
+            'complaint_text' => 'Ada tonjolan keras di kulit, saya jawab seadanya karena tidak ada pilihan yang benar-benar cocok.',
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'P2_BENJOLAN' => 1.0,
+                'P2_TANDUK' => 1.0,
             ]),
             'red_flags' => $this->redFlags([]),
         ])->assertRedirect();
 
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
-        $bcc = Disease::query()->where('code', 'BASAL_CELL_CARCINOMA')->firstOrFail();
+        $cutaneousHorn = Disease::query()->where('code', 'CUTANEOUS_HORN')->firstOrFail();
 
         // disease_id tetap tersimpan apa adanya untuk audit - yang berubah
         // cuma apa yang ditonjolkan ke pengguna (label_suppressed).
-        $this->assertSame($bcc->id, $finalResult->disease_id);
+        $this->assertSame($cutaneousHorn->id, $finalResult->disease_id);
         $this->assertSame('refer', $finalResult->action);
         $this->assertSame([], $finalResult->recommendations_snapshot);
         $this->assertTrue($finalResult->label_suppressed);
-        $this->assertStringNotContainsString('Karsinoma sel basal', $finalResult->explanation);
+        $this->assertStringNotContainsString('Tanduk kulit', $finalResult->explanation);
 
         $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
             ->assertOk();
@@ -835,11 +835,12 @@ class ConsultationFlowTest extends TestCase
      * benar memicu tanda bahaya (SEVERE_PAIN + PUS_OR_WIDE_INFECTION) via F07,
      * yang MEMANG benar secara medis (nyeri hebat + nanah wajib diperiksa).
      * Tapi F07 melewati SELURUH pengecekan F04-F06 di resolveRule(), sehingga
-     * nama "Karsinoma sel basal" tetap tampil dari CF 92% yang cuma dibangun
-     * dari 2 gejala generik (benjolan mengkilap + hanya di satu tempat) -
-     * padahal kandidat visual sendiri (Jerawat/Impetigo) tidak pernah
-     * menyebut BCC sama sekali. Rujukannya tetap benar; namanya yang harus
-     * disembunyikan.
+     * nama penyakit rujukan tetap tampil dari CF tinggi yang cuma dibangun
+     * dari 2 gejala generik - padahal kandidat visual sendiri (Jerawat/
+     * Impetigo) tidak pernah menyebutnya sama sekali. Rujukannya tetap benar;
+     * namanya yang harus disembunyikan. (Basal Cell Carcinoma dari sesi asli
+     * digantikan Tanduk kulit pada 2026-08-31; skenario dan mekanismenya
+     * tetap sama.)
      */
     public function test_red_flag_referral_still_suppresses_thin_evidence_disease_label(): void
     {
@@ -878,8 +879,8 @@ class ConsultationFlowTest extends TestCase
             'consent' => '1',
             'image' => UploadedFile::fake()->image('skin.png', 320, 320),
             'symptoms' => $this->symptoms([
-                'P2_BENJOLAN' => 1.0,
-                'P6_SETEMPAT' => 1.0,
+                'P2_TANDUK' => 1.0,
+                'P3_TIDAKADA' => 1.0,
             ]),
             'red_flags' => $this->redFlags([
                 'SEVERE_PAIN' => true,
@@ -888,15 +889,15 @@ class ConsultationFlowTest extends TestCase
         ])->assertRedirect();
 
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
-        $bcc = Disease::query()->where('code', 'BASAL_CELL_CARCINOMA')->firstOrFail();
+        $cutaneousHorn = Disease::query()->where('code', 'CUTANEOUS_HORN')->firstOrFail();
 
         $this->assertSame('F07', $finalResult->fusion_rule_code);
         $this->assertSame('refer', $finalResult->action);
-        // disease_id tetap tersimpan (BCC menang CF teks) untuk audit - yang
-        // berubah cuma apa yang ditonjolkan ke pengguna.
-        $this->assertSame($bcc->id, $finalResult->disease_id);
+        // disease_id tetap tersimpan (Tanduk kulit menang CF teks) untuk audit
+        // - yang berubah cuma apa yang ditonjolkan ke pengguna.
+        $this->assertSame($cutaneousHorn->id, $finalResult->disease_id);
         $this->assertTrue($finalResult->label_suppressed);
-        $this->assertStringNotContainsString('Karsinoma sel basal', $finalResult->explanation);
+        $this->assertStringNotContainsString('Tanduk kulit', $finalResult->explanation);
         $this->assertStringContainsString('tanda bahaya', $finalResult->explanation);
 
         $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))

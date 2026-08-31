@@ -56,7 +56,7 @@ class QuestionBank
             ['code' => 'ACNE_VULGARIS', 'name' => 'Acne Vulgaris', 'name_indonesian' => 'Jerawat', 'dataset_class' => 'Acne_Vulgaris', 'dataset_class_id' => 2, 'default_action' => 'recommend_otc', 'description' => 'Peradangan kelenjar minyak dengan komedo dan bintil bernanah.'],
             ['code' => 'ECZEMA', 'name' => 'Eczema', 'name_indonesian' => 'Eksim', 'dataset_class' => 'Eczema', 'dataset_class_id' => 55, 'default_action' => 'recommend_otc', 'description' => 'Peradangan kulit kronis yang gatal, kering, dan kambuh-kambuhan.'],
             ['code' => 'URTICARIA', 'name' => 'Urticaria', 'name_indonesian' => 'Biduran', 'dataset_class' => 'Urticaria', 'dataset_class_id' => 193, 'default_action' => 'recommend_otc', 'description' => 'Bentol gatal yang muncul dan hilang dalam hitungan jam serta dapat berpindah.'],
-            ['code' => 'CANDIDIASIS', 'name' => 'Candidiasis', 'name_indonesian' => 'Kandidiasis kulit', 'dataset_class' => 'Candidiasis', 'dataset_class_id' => 31, 'default_action' => 'recommend_otc', 'description' => 'Infeksi jamur pada lipatan kulit lembap, khas disertai bintik satelit di sekitarnya.'],
+            ['code' => 'ICHTHYOSIS', 'name' => 'Ichthyosis', 'name_indonesian' => 'Iktiosis', 'dataset_class' => 'Ichthyosis', 'dataset_class_id' => 88, 'default_action' => 'recommend_otc', 'description' => 'Kulit kering kronis dengan sisik besar berbentuk kotak-kotak menyerupai sisik ikan, menutupi area tubuh luas, biasanya sejak kecil.'],
             ['code' => 'PITYRIASIS_ALBA', 'name' => 'Pityriasis Alba', 'name_indonesian' => 'Pitiriasis alba', 'dataset_class' => 'Pityriasis_Alba', 'dataset_class_id' => 146, 'default_action' => 'educate_only', 'description' => 'Bercak putih samar bersisik halus, umum pada anak dan sering dikira panu.', 'medical_treatment_note' => 'Umumnya membaik sendiri dalam beberapa bulan hingga tahun; dokter biasanya cukup menyarankan pelembap rutin dan menghindari sabun yang mengeringkan kulit. Kortikosteroid topikal ringan kadang diresepkan bila gatal/meradang. Tidak ada obat bebas terbatas yang secara khusus ditujukan untuk kondisi ini.', 'source_note' => 'DermNet pityriasis alba: https://dermnetnz.org/topics/pityriasis-alba'],
             ['code' => 'ONYCHOMYCOSIS', 'name' => 'Onychomycosis', 'name_indonesian' => 'Jamur kuku', 'dataset_class' => 'Onychomycosis', 'dataset_class_id' => 139, 'default_action' => 'educate_only', 'description' => 'Infeksi jamur pada kuku sehingga kuku menebal, rapuh, dan berubah warna.', 'medical_treatment_note' => 'Obat antijamur oles yang dijual bebas umumnya tidak cukup menembus lempeng kuku, sehingga dokter biasanya meresepkan antijamur oral (terbinafine atau itrakonazol) setelah diagnosis dikonfirmasi lewat pemeriksaan kerokan kuku (KOH/kultur). Pengobatan berlangsung berbulan-bulan mengikuti pertumbuhan kuku.', 'source_note' => 'DermNet fungal nail infections: https://dermnetnz.org/topics/fungal-nail-infections; AAD nail fungus: https://www.aad.org/public/diseases/nail-fungus'],
 
@@ -64,7 +64,7 @@ class QuestionBank
 
             ['code' => 'IMPETIGO', 'name' => 'Impetigo', 'name_indonesian' => 'Impetigo', 'dataset_class' => 'Impetigo', 'dataset_class_id' => 89, 'default_action' => 'refer', 'description' => 'Infeksi bakteri menular dengan krusta kuning keemasan, memerlukan penanganan tenaga kesehatan.', 'medical_treatment_note' => 'Memerlukan antibiotik resep dokter - salep antibiotik (misalnya mupirocin) untuk kasus terbatas, atau antibiotik minum bila luas/menyebar. Sangat menular lewat sentuhan langsung, sehingga kebersihan tangan dan tidak berbagi handuk penting selagi menunggu pemeriksaan.', 'source_note' => 'CDC impetigo: https://www.cdc.gov/group-a-strep/about/impetigo.html; DermNet impetigo: https://dermnetnz.org/topics/impetigo'],
             ['code' => 'HERPES_ZOSTER', 'name' => 'Herpes Zoster', 'name_indonesian' => 'Cacar ular', 'dataset_class' => 'Herpes_Zoster', 'dataset_class_id' => 83, 'default_action' => 'refer', 'description' => 'Reaktivasi virus varicella berupa gelembung bergerombol satu sisi tubuh disertai nyeri.', 'medical_treatment_note' => 'Perlu antivirus resep dokter (asiklovir, valasiklovir, atau famsiklovir), idealnya dimulai dalam 72 jam sejak ruam muncul untuk mengurangi risiko nyeri saraf berkepanjangan (neuralgia pasca-herpes). Pereda nyeri juga sering diperlukan. Segera periksa, terutama bila mengenai area sekitar mata.', 'source_note' => 'CDC shingles treatment: https://www.cdc.gov/shingles/treatment/index.html; DermNet herpes zoster: https://dermnetnz.org/topics/herpes-zoster'],
-            ['code' => 'BASAL_CELL_CARCINOMA', 'name' => 'Basal Cell Carcinoma', 'name_indonesian' => 'Karsinoma sel basal', 'dataset_class' => 'Basal_Cell_Carcinoma', 'dataset_class_id' => 21, 'default_action' => 'refer', 'description' => 'Kanker kulit tersering, berupa benjolan mengkilap yang tidak sembuh dan kadang berdarah.', 'medical_treatment_note' => 'Tidak ada obat oles bebas yang mengobati kanker kulit ini. Penanganan standar adalah pengangkatan lewat operasi (termasuk teknik Mohs untuk area wajah), dengan terapi topikal resep atau terapi lain sebagai pilihan pada kasus tertentu yang ditentukan dokter kulit. Deteksi dan penanganan dini sangat memengaruhi hasil pengobatan.', 'source_note' => 'AAD basal cell carcinoma treatment: https://www.aad.org/public/diseases/skin-cancer/types/common/bcc/treatment; CDC skin cancer treatment: https://www.cdc.gov/skin-cancer/treatment/index.html'],
+            ['code' => 'CUTANEOUS_HORN', 'name' => 'Cutaneous Horn', 'name_indonesian' => 'Tanduk kulit', 'dataset_class' => 'Cutaneous_Horn', 'dataset_class_id' => 39, 'default_action' => 'refer', 'description' => 'Pertumbuhan keratin memanjang seperti tanduk kecil pada kulit, sering menandakan lesi prakanker atau kanker kulit di bawahnya.', 'medical_treatment_note' => 'Bukan kondisi yang diobati dengan krim bebas. Dokter kulit biasanya melakukan biopsi atau pengangkatan lesi untuk memastikan tidak ada keratosis aktinik, karsinoma sel skuamosa, atau kanker kulit lain di dasarnya - deteksi dini sangat memengaruhi hasil pengobatan.', 'source_note' => 'DermNet cutaneous horn: https://dermnetnz.org/topics/cutaneous-horn; AAD actinic keratosis (kondisi dasar yang sering menyertai): https://www.aad.org/public/diseases/skin-cancer/actinic-keratosis'],
         ];
     }
 
@@ -109,6 +109,7 @@ class QuestionBank
                     'P2_KERAK' => ['Luka berkerak kuning', 'Seperti madu yang mengering di atas luka'],
                     'P2_MERAHLUAS' => ['Merah luas tanpa batas jelas', 'Kemerahan menyebar dan tepinya sulit ditentukan'],
                     'P2_KUKUBERUBAH' => ['Bukan ruam, tapi kuku yang berubah', 'Kuku menebal, rapuh, atau berubah warna, tanpa ruam pada kulit di sekitarnya'],
+                    'P2_TANDUK' => ['Tonjolan keras memanjang seperti tanduk', 'Menjulang dari kulit, keras seperti kuku atau tanduk kecil, biasanya di area yang sering terkena matahari'],
                     'P2_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau Anda yakin dengan bentuknya tapi tidak ada pilihan di atas yang pas — jangan paksa pilih yang paling mendekati'],
                 ],
             ],
@@ -121,6 +122,7 @@ class QuestionBank
                     'P3_HALUS' => ['Halus seperti bedak', 'Sisik tipis yang baru terlihat jelas saat digaruk pelan'],
                     'P3_TEBAL' => ['Tebal, putih keperakan', 'Mengelupas berlapis seperti serpihan lilin'],
                     'P3_KERING' => ['Kering dan pecah-pecah', 'Kulit terasa kaku, retak, kadang perih'],
+                    'P3_SISIKIKAN' => ['Sisik besar berbentuk kotak-kotak seperti sisik ikan', 'Menutupi area kulit yang luas, tampak kering di sela-sela sisiknya'],
                     'P3_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau tidak ada pilihan di atas yang menggambarkan permukaannya dengan tepat'],
                 ],
             ],
@@ -262,10 +264,10 @@ class QuestionBank
                 'P3_TIDAKADA' => 0.60, 'P4_GATAL' => 0.80,
                 'P5_JAM' => 0.80, 'P6_TERSEBAR' => 0.40, 'P7_OBAT' => 0.40, 'P7_KONTAK' => 0.20,
             ],
-            'CANDIDIASIS' => [
-                'P1_LIPATAN' => 0.80, 'P2_MERAHLUAS' => 0.40,
-                'P4_GATAL' => 0.40, 'P4_PERIH' => 0.60,
-                'P5_MINGGU' => 0.40, 'P7_KERINGAT' => 0.60, 'P8_SATELIT' => 0.80,
+            'ICHTHYOSIS' => [
+                'P9_ANAK' => 0.40,
+                'P1_BADAN' => 0.40, 'P3_SISIKIKAN' => 0.80,
+                'P4_GATAL' => 0.20, 'P5_TAHUN' => 0.60, 'P6_SIMETRIS' => 0.40,
             ],
             'PITYRIASIS_ALBA' => [
                 'P9_ANAK' => 0.60,
@@ -296,11 +298,11 @@ class QuestionBank
                 'P1_BADAN' => 0.60, 'P2_GELEMBUNG' => 0.80,
                 'P4_NYERI' => 0.80, 'P5_HARI' => 0.60, 'P6_SATUSISI' => 0.80,
             ],
-            'BASAL_CELL_CARCINOMA' => [
+            'CUTANEOUS_HORN' => [
                 'P9_LANSIA' => 0.60,
-                'P1_WAJAH' => 0.80, 'P2_BENJOLAN' => 0.80,
-                'P3_TIDAKADA' => 0.40, 'P4_TIDAKTERASA' => 0.60,
-                'P5_BULAN' => 0.80, 'P6_SETEMPAT' => 0.60,
+                'P1_WAJAH' => 0.60, 'P2_TANDUK' => 0.80,
+                'P3_TIDAKADA' => 0.20, 'P4_TIDAKTERASA' => 0.40,
+                'P5_BULAN' => 0.60,
             ],
         ];
     }
