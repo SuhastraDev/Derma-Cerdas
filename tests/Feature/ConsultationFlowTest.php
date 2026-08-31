@@ -975,6 +975,112 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * F13 (2026-09-01, rancangan pengganti gate visual yang dinonaktifkan):
+     * pengguna dengan jujur menjawab "Tidak yakin/tidak ada yang cocok" untuk
+     * mayoritas gejala deskriptif (bentuk, permukaan, rasa) - pengakuan
+     * eksplisit bahwa profil gejalanya tidak cocok pola manapun di 16
+     * penyakit. Sinyal ini murni dari jawaban pengguna sendiri, jadi tetap
+     * berfungsi walau visual tersedia dan valid (beda dari gate lama yang
+     * bergantung status provider visual).
+     */
+    public function test_majority_descriptive_tidakyakin_answers_trigger_f13(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Gejala Tidak Cocok',
+            'complaint_text' => 'Ada keluhan di kulit tapi tidak ada satu pun pilihan yang benar-benar menggambarkannya.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P2_TIDAKYAKIN' => 1.0,
+                'P3_TIDAKYAKIN' => 1.0,
+                'P4_TIDAKYAKIN' => 1.0,
+                'P5_MINGGU' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame('F13', $finalResult->fusion_rule_code);
+        $this->assertSame('refer', $finalResult->action);
+        $this->assertSame([], $finalResult->recommendations_snapshot);
+        $this->assertTrue($finalResult->label_suppressed);
+        $this->assertStringContainsString('tidak cocok', $finalResult->explanation);
+
+        $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
+            ->assertOk();
+    }
+
+    /**
+     * Satu jawaban "tidak yakin" saja (mis. cuma satu ciri lesi yang memang
+     * tidak khas) tidak boleh memicu F13 - itu bisa saja cuma satu ciri yang
+     * ambigu, bukan sinyal seluruh profil gejala meleset.
+     */
+    public function test_single_tidakyakin_answer_does_not_trigger_f13(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Satu Tidak Yakin',
+            'complaint_text' => 'Bercak bersisik di badan, gatal, sudah beberapa minggu.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P2_TIDAKYAKIN' => 1.0,
+                'P3_HALUS' => 1.0,
+                'P4_GATAL' => 1.0,
+                'P5_MINGGU' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertNotSame('F13', $finalResult->fusion_rule_code);
+        $this->assertFalse($finalResult->label_suppressed);
+    }
+
+    /**
      * Fase 1 (margin untuk F08): kandidat visual di luar 16 penyakit (tanpa
      * basis CF) tidak boleh memaksakan namanya lewat F08 kalau cuma unggul
      * tipis dari kandidat visual lain - model yang skornya menyebar rata ke

@@ -217,6 +217,60 @@ class FusionDecisionServiceTest extends TestCase
         $this->assertStringContainsString('basal cell carcinoma', $result['explanation']);
     }
 
+    /**
+     * F13: pengguna sendiri menjawab "Tidak yakin/tidak ada yang cocok" untuk
+     * mayoritas gejala deskriptif - sinyal ini menang atas CF setinggi apa
+     * pun dan atas visual yang tersedia sekalipun, karena meragukan validitas
+     * Pt itu sendiri (lihat ConsultationWorkflowService::
+     * symptomsIndicateOutOfScope()).
+     */
+    public function test_f13_symptoms_indicate_out_of_scope_suppresses_label_regardless_of_cf_and_visual(): void
+    {
+        $disease = $this->createDisease('TINEA_CORPORIS');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $disease,
+            textualCf: 0.95,
+            visualDisease: $disease,
+            visualScore: 0.90,
+            visualAvailable: true,
+            redFlagResult: ['has_red_flags' => false],
+            symptomsIndicateOutOfScope: true,
+        );
+
+        $this->assertSame('F13', $result['fusion_rule_code']);
+        $this->assertSame('refer', $result['action']);
+        $this->assertFalse($result['can_recommend_medicine']);
+        $this->assertTrue($result['label_suppressed']);
+        $this->assertStringNotContainsString('tinea corporis', mb_strtolower($result['explanation']));
+        $this->assertStringContainsString('tidak cocok', mb_strtolower($result['explanation']));
+    }
+
+    /**
+     * F07 (tanda bahaya) tetap menang untuk rule_code/action - rujukan
+     * darurat tidak boleh disamarkan jadi F13. Tapi label tetap disembunyikan
+     * kalau symptomsIndicateOutOfScope juga true, karena keduanya independen.
+     */
+    public function test_f07_red_flags_win_rule_code_but_label_still_suppressed_with_f13_signal(): void
+    {
+        $disease = $this->createDisease('TINEA_CORPORIS');
+
+        $result = (new FusionDecisionService)->decide(
+            textualDisease: $disease,
+            textualCf: 0.95,
+            visualDisease: null,
+            visualScore: 0.0,
+            visualAvailable: false,
+            redFlagResult: ['has_red_flags' => true],
+            symptomsIndicateOutOfScope: true,
+        );
+
+        $this->assertSame('F07', $result['fusion_rule_code']);
+        $this->assertSame('refer', $result['action']);
+        $this->assertTrue($result['label_suppressed']);
+        $this->assertStringNotContainsString('tinea corporis', mb_strtolower($result['explanation']));
+    }
+
     public function test_f07_red_flags_force_refer_even_when_matching_and_cf_is_high(): void
     {
         $disease = $this->createDisease('TINEA_PEDIS');

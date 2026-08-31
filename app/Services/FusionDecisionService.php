@@ -160,6 +160,16 @@ class FusionDecisionService
      *                                    bukan beberapa gejala independen yang saling menguatkan. CF akhirnya
      *                                    bisa saja tinggi, tapi tidak cukup meyakinkan untuk menyebut nama
      *                                    penyakit spesifik. Hanya dipakai saat $visualAvailable false (F06).
+     * @param  bool  $symptomsIndicateOutOfScope  True jika pengguna sendiri menjawab "Tidak yakin/tidak
+     *                                    ada yang cocok" untuk mayoritas kelompok gejala deskriptif
+     *                                    (bentuk/permukaan/rasa/durasi) yang ditanyakan padanya - lihat
+     *                                    ConsultationWorkflowService::symptomsIndicateOutOfScope(). Beda
+     *                                    dari $textualUnreliable (jumlah gejala yang cocok terlalu sedikit):
+     *                                    ini pengakuan EKSPLISIT bahwa gejalanya tidak menggambarkan pola
+     *                                    manapun di 16 penyakit, bukan cuma kurang bukti. Sengaja tidak
+     *                                    bergantung visual sama sekali sehingga tetap berfungsi saat
+     *                                    provider visual tidak tersedia/degraded. Berlaku PENUH terlepas
+     *                                    dari $visualAvailable - lihat resolveRule().
      */
     public function decide(
         Disease $textualDisease,
@@ -169,7 +179,8 @@ class FusionDecisionService
         bool $visualAvailable,
         array $redFlagResult = [],
         bool $visualUnreliable = false,
-        bool $textualUnreliable = false
+        bool $textualUnreliable = false,
+        bool $symptomsIndicateOutOfScope = false
     ): array {
         $textualCf = $this->clamp($textualCf);
         $visualScore = $this->clamp($visualScore);
@@ -182,7 +193,8 @@ class FusionDecisionService
             $visualAvailable,
             $hasRedFlags,
             $visualUnreliable,
-            $textualUnreliable
+            $textualUnreliable,
+            $symptomsIndicateOutOfScope
         );
         $action = $this->enforceDiseaseScope($textualDisease, $action);
 
@@ -193,17 +205,20 @@ class FusionDecisionService
             'recommend_otc_unsupported',
         ], true);
 
-        // 2026-09-01: dinonaktifkan atas permintaan eksplisit setelah diskusi
-        // trade-off (lihat riwayat percakapan) - selama provider visual (Groq)
-        // sering degraded, gate ini menahan nama penyakit & panel dataset untuk
-        // kasus yang sebenarnya benar (CF teks tinggi, gejala deskriptif cocok),
-        // bukan cuma kasus bukti tipis yang ditargetkannya semula. Pengguna
-        // sadar dan menerima risiko bug lama (nama/obat salah dari gejala yang
-        // kebetulan cocok penyakit lain saat visual tidak bisa memverifikasi)
-        // bisa terulang - lihat test_degraded_visual_without_explicit_outside_scope_still_prevents_otc_recommendation
-        // dan test_single_generic_symptom_match_suppresses_disease_label_even_for_refer_category
-        // di ConsultationFlowTest untuk skenario yang dulu dilindungi gate ini.
-        $labelSuppressed = false;
+        // 2026-09-01: label_suppressed berbasis visual (visualUnreliable/
+        // textualUnreliable) dinonaktifkan atas permintaan eksplisit - lihat
+        // riwayat percakapan. Satu-satunya kondisi yang masih menyembunyikan
+        // nama sekarang adalah symptomsIndicateOutOfScope: pengakuan eksplisit
+        // pengguna sendiri ("tidak ada yang cocok" untuk mayoritas gejala
+        // deskriptif), bukan ketiadaan verifikasi visual - sinyal ini tidak
+        // pernah salah menghukum kasus yang penggunanya sendiri yakin cocok.
+        //
+        // Dicek independen dari $ruleCode (bukan cuma "=== 'F13'") supaya
+        // tetap berlaku walau F07 (tanda bahaya) menang duluan di
+        // resolveRule() - rujukan darurat tetap benar sebagai AKSI, tapi
+        // nama penyakitnya tetap harus disembunyikan kalau pengguna sendiri
+        // sudah bilang gejalanya tidak cocok pola manapun.
+        $labelSuppressed = $symptomsIndicateOutOfScope;
 
         return [
             'disease' => $textualDisease,
@@ -238,11 +253,25 @@ class FusionDecisionService
         bool $visualAvailable,
         bool $hasRedFlags,
         bool $visualUnreliable = false,
-        bool $textualUnreliable = false
+        bool $textualUnreliable = false,
+        bool $symptomsIndicateOutOfScope = false
     ): array {
         // F07: tanda bahaya menggantikan seluruh aturan lainnya.
         if ($hasRedFlags) {
             return ['F07', 'refer'];
+        }
+
+        // F13 (perluasan di luar Tabel 3.13): pengguna sendiri menjawab
+        // "Tidak yakin/tidak ada yang cocok" untuk mayoritas gejala
+        // deskriptif - lihat ConsultationWorkflowService::
+        // symptomsIndicateOutOfScope(). Diperiksa SEBELUM F01-F06 karena
+        // sinyal ini meragukan validitas Pt (kandidat teks) itu sendiri,
+        // terlepas dari CF-nya atau apakah visual tersedia - CF forward-
+        // chaining mengasumsikan gejalanya memang menggambarkan salah satu
+        // dari 16 penyakit, dan pengakuan ini membantahnya langsung dari
+        // sumbernya.
+        if ($symptomsIndicateOutOfScope) {
+            return ['F13', 'refer'];
         }
 
         // F06: citra tidak dapat dianalisis atau kelas visual di luar ruang lingkup.
@@ -304,35 +333,24 @@ class FusionDecisionService
         $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
         $cfPercent = sprintf('%.1f%%', $textualCf * 100);
 
-        // Diperiksa PALING AWAL, sebelum cabang tanda bahaya maupun cabang
-        // golongan penyakit di bawah - lihat decide() untuk kondisi lengkapnya.
-        // Nama penyakit sengaja TIDAK disebut di sini: kalau sudah disembunyikan
-        // dari "Kemungkinan utama" karena buktinya lemah, menyebutnya lewat
-        // "Alasan sistem" cuma membocorkannya lewat pintu belakang. Ini berlaku
-        // SAMA untuk F04/F05/F06 maupun F07 (tanda bahaya) - tanda bahaya
-        // menentukan urgensi rujukannya, bukan seberapa yakin nama penyakitnya.
+        // Diperiksa PALING AWAL, sebelum cabang lain di bawah - lihat decide()
+        // untuk kondisi lengkapnya. label_suppressed sekarang HANYA dipicu
+        // symptomsIndicateOutOfScope, dicek independen dari $ruleCode - bisa
+        // saja $ruleCode di sini tetap 'F07' kalau tanda bahaya JUGA
+        // terdeteksi bersamaan (rujukan darurat sebagai aksi tetap benar,
+        // tapi nama penyakitnya tetap disembunyikan). Nama penyakit sengaja
+        // TIDAK disebut di sini - itu justru inti pesannya: jawaban pengguna
+        // sendiri bilang tidak ada yang cocok.
         if ($labelSuppressed) {
             if ($hasRedFlags) {
                 return sprintf(
-                    'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan. Kandidat penyakit teratas belum cukup meyakinkan untuk dipastikan namanya (CF %s), sehingga keputusan ini murni berdasarkan tanda bahaya yang terdeteksi, bukan satu diagnosis tertentu.',
+                    'Aturan F07 + F13: terdeteksi tanda bahaya sehingga pengguna diarahkan segera ke tenaga kesehatan. Nama penyakit tidak dipastikan karena jawaban Anda sendiri menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (CF %s dari kandidat teratas).',
                     $cfPercent
                 );
             }
-
-            if (! $visualAvailable || ! $visualDisease) {
-                return sprintf(
-                    'Aturan %s: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, atau jawaban gejala cuma dibangun dari sedikit gejala yang cocok (CF %s) - belum cukup spesifik untuk memastikan satu nama penyakit. Disarankan konsultasi langsung untuk kepastian, bukan berdasarkan satu nama penyakit tertentu.',
-                    $ruleCode,
-                    $cfPercent
-                );
-            }
-
-            $visualName = $visualDisease->name_indonesian ?: $visualDisease->name;
 
             return sprintf(
-                'Aturan %s: hasil visual justru mengarah ke %s, berbeda dari kandidat gejala teratas yang buktinya sendiri belum cukup kuat untuk dipastikan (CF %s hanya dari sedikit gejala yang cocok) - belum cukup meyakinkan untuk menyebut satu nama penyakit pasti. Disarankan konsultasi langsung untuk kepastian.',
-                $ruleCode,
-                $visualName,
+                'Aturan F13 (perluasan di luar Tabel 3.13): jawaban Anda menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (dipilih "Tidak yakin / tidak ada yang cocok" untuk mayoritas ciri lesi yang ditanyakan) - kemungkinan kondisi ini di luar cakupan sistem. Disarankan periksa langsung ke tenaga kesehatan untuk kepastian, bukan berdasarkan satu nama penyakit tertentu dari kandidat teratas (CF %s).',
                 $cfPercent
             );
         }

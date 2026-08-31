@@ -164,6 +164,53 @@ class ConsultationWorkflowService
     }
 
     /**
+     * Sinyal "kemungkinan di luar 16 penyakit" dari jawaban pengguna sendiri,
+     * bukan dari visual (yang bisa mati saat provider down). Kelompok
+     * deskriptif P2-P5 (bentuk, permukaan, rasa, durasi) menggambarkan
+     * KARAKTER lesi itu sendiri - lihat FusionDecisionService::
+     * DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES. Kalau pengguna dengan jujur memilih
+     * "Tidak yakin / tidak ada yang cocok" untuk MAYORITAS kelompok itu yang
+     * benar-benar ditanyakan padanya (bukan asumsi keempatnya selalu
+     * ditanyakan - pertanyaan P3-P5 bersifat adaptif), itu pengakuan eksplisit
+     * bahwa gejalanya tidak cocok pola manapun di 16 penyakit cakupan.
+     *
+     * Ambang: minimal 2 kelompok dijawab "tidak yakin" DAN itu lebih dari
+     * separuh kelompok yang dijawab (1/1 atau 2/2 tidak cukup - baru 2/3 ke
+     * atas). Satu jawaban "tidak yakin" satu-satunya (mis. cuma P2 yang
+     * sempat ditanya sebelum CF sudah cukup jelas) tidak boleh memicu ini -
+     * itu bisa saja cuma satu ciri yang memang tidak khas, bukan sinyal
+     * seluruh profil gejala meleset.
+     */
+    private function symptomsIndicateOutOfScope(array $normalizedSymptoms): bool
+    {
+        $answered = 0;
+        $tidakYakin = 0;
+
+        foreach (FusionDecisionService::DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES as $prefix) {
+            $selectedCode = null;
+
+            foreach ($normalizedSymptoms as $code => $value) {
+                if ($value >= 1.0 && str_starts_with($code, $prefix.'_')) {
+                    $selectedCode = $code;
+                    break;
+                }
+            }
+
+            if ($selectedCode === null) {
+                continue;
+            }
+
+            $answered++;
+
+            if (str_ends_with($selectedCode, '_TIDAKYAKIN')) {
+                $tidakYakin++;
+            }
+        }
+
+        return $tidakYakin >= 2 && $tidakYakin > ($answered / 2);
+    }
+
+    /**
      * @param  array{provider_status?: string, validation_status: string, warnings: array<int, string>}  $visualAnalysis
      */
     private function visualValidationMessage(array $visualAnalysis): string
@@ -436,6 +483,12 @@ class ConsultationWorkflowService
                 // menyebut nama penyakit spesifik dengan yakin - lihat konstanta
                 // MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL di atas.
                 textualUnreliable: $textualUnreliable,
+                // Pengakuan eksplisit pengguna sendiri: mayoritas kelompok gejala
+                // deskriptif (bentuk/permukaan/rasa/durasi) dijawab "Tidak yakin/
+                // tidak ada yang cocok" - lihat symptomsIndicateOutOfScope().
+                // Sengaja TIDAK bergantung pada visual sama sekali, supaya tetap
+                // berfungsi saat provider visual tidak tersedia/degraded.
+                symptomsIndicateOutOfScope: $this->symptomsIndicateOutOfScope($normalizedSymptoms),
             );
             $finalDisease = $textualDisease;
         }
