@@ -1081,6 +1081,61 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi produksi (audit 2026-08-31, kode DC-20260831-203327-FGJ3B):
+     * foto bisul (di luar 16 penyakit) dijawab 2 dari 4 kelompok deskriptif
+     * "Tidak yakin/tidak cocok" (P2, P3) dan 2 dijawab nyata (P4 nyeri,
+     * P5 beberapa hari). Ambang awal F13 butuh LEBIH DARI separuh, jadi 2/4
+     * (pas separuh) lolos ke CF biasa - hasilnya nama "Cacar ular" tampil
+     * dengan CF 96,8% dari cuma 2 gejala generik, padahal fotonya bukan
+     * salah satu dari 16 penyakit. Ambang diturunkan jadi "separuh atau
+     * lebih" supaya kasus pas-separuh ini juga tertangkap.
+     */
+    public function test_exactly_half_descriptive_tidakyakin_answers_trigger_f13(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+
+        $this->mock(AiVisualService::class, function ($mock): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'dataset_fallback',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'degraded',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Bisul Setengah Tidak Yakin',
+            'complaint_text' => 'Ada bisul di kulit, bengkak merah, nyeri, tidak ada pilihan yang benar-benar cocok.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P1_BADAN' => 1.0,
+                'P2_TIDAKYAKIN' => 1.0,
+                'P3_TIDAKYAKIN' => 1.0,
+                'P4_NYERI' => 1.0,
+                'P5_HARI' => 1.0,
+                'P9_DEWASA' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        $this->assertSame('F13', $finalResult->fusion_rule_code);
+        $this->assertSame('refer', $finalResult->action);
+        $this->assertTrue($finalResult->label_suppressed);
+    }
+
+    /**
      * Fase 1 (margin untuk F08): kandidat visual di luar 16 penyakit (tanpa
      * basis CF) tidak boleh memaksakan namanya lewat F08 kalau cuma unggul
      * tipis dari kandidat visual lain - model yang skornya menyebar rata ke

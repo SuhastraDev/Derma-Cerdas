@@ -350,7 +350,7 @@ class FusionDecisionService
             }
 
             return sprintf(
-                'Aturan F13 (perluasan di luar Tabel 3.13): jawaban Anda menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (dipilih "Tidak yakin / tidak ada yang cocok" untuk mayoritas ciri lesi yang ditanyakan) - kemungkinan kondisi ini di luar cakupan sistem. Disarankan periksa langsung ke tenaga kesehatan untuk kepastian, bukan berdasarkan satu nama penyakit tertentu dari kandidat teratas (CF %s).',
+                'Aturan F13 (perluasan di luar Tabel 3.13): jawaban Anda menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (dipilih "Tidak yakin / tidak ada yang cocok" untuk separuh atau lebih ciri lesi yang ditanyakan) - kemungkinan kondisi ini di luar cakupan sistem. Disarankan periksa langsung ke tenaga kesehatan untuk kepastian, bukan berdasarkan satu nama penyakit tertentu dari kandidat teratas (CF %s).',
                 $cfPercent
             );
         }

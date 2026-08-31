@@ -174,12 +174,17 @@ class ConsultationWorkflowService
      * ditanyakan - pertanyaan P3-P5 bersifat adaptif), itu pengakuan eksplisit
      * bahwa gejalanya tidak cocok pola manapun di 16 penyakit cakupan.
      *
-     * Ambang: minimal 2 kelompok dijawab "tidak yakin" DAN itu lebih dari
-     * separuh kelompok yang dijawab (1/1 atau 2/2 tidak cukup - baru 2/3 ke
-     * atas). Satu jawaban "tidak yakin" satu-satunya (mis. cuma P2 yang
-     * sempat ditanya sebelum CF sudah cukup jelas) tidak boleh memicu ini -
-     * itu bisa saja cuma satu ciri yang memang tidak khas, bukan sinyal
-     * seluruh profil gejala meleset.
+     * Ambang: minimal 2 kelompok dijawab "tidak yakin" DAN itu SEPARUH ATAU
+     * LEBIH dari kelompok yang dijawab (2/4, 2/3, 2/2 semua memicu; 1/apa pun
+     * tidak). Awalnya diset "lebih dari separuh" (butuh 2/3 ke atas), tapi
+     * kasus produksi (audit 2026-08-31, foto Cellulitis dijawab 2/4 tidak
+     * yakin) lolos ke CF biasa dan menampilkan nama yang salah (Cacar ular,
+     * CF 96,8% dari cuma 2 gejala generik) - pas separuh ternyata sudah
+     * cukup jadi sinyal kuat, tidak perlu mayoritas ketat. Syarat minimal 2
+     * kelompok tetap dipertahankan: satu jawaban "tidak yakin" satu-satunya
+     * (mis. cuma P2 yang sempat ditanya) tidak boleh memicu ini - itu bisa
+     * saja cuma satu ciri yang memang tidak khas, bukan sinyal seluruh
+     * profil gejala meleset.
      */
     private function symptomsIndicateOutOfScope(array $normalizedSymptoms): bool
     {
@@ -207,7 +212,7 @@ class ConsultationWorkflowService
             }
         }
 
-        return $tidakYakin >= 2 && $tidakYakin > ($answered / 2);
+        return $tidakYakin >= 2 && $tidakYakin >= ($answered / 2);
     }
 
     /**
