@@ -193,27 +193,17 @@ class FusionDecisionService
             'recommend_otc_unsupported',
         ], true);
 
-        // Nama penyakit spesifik disembunyikan dari tampilan utama setiap kali
-        // (a) visual TIDAK independen setuju dengan kandidat teks (tidak
-        // tersedia, tidak bisa dipercaya, atau justru mengarah ke penyakit
-        // lain), (b) buktinya sendiri lemah (visual tidak bisa dipercaya ATAU
-        // teks dibangun dari terlalu sedikit gejala), DAN (c) hasil akhirnya
-        // TIDAK memberi obat. Syarat (c) sengaja membatasi F04 (mismatch, CF
-        // tinggi) tetap menampilkan nama seperti sebelumnya - F04 sudah punya
-        // mekanisme transparansinya sendiri (catatan mismatch di explanation)
-        // dan tetap memberi obat, jadi menyembunyikan namanya sambil tetap
-        // menyerahkan obat untuk penyakit yang "tidak disebutkan" itu cuma
-        // membingungkan. Berlaku penuh di F05/F06/F07 (semuanya sudah tidak
-        // memberi obat) - termasuk saat tanda bahaya memaksa refer, karena
-        // regresi produksi 2026-08-30 menunjukkan F07 melewati seluruh
-        // pengecekan F04-F06 (resolveRule() mengembalikannya duluan), sehingga
-        // nama penyakit (mis. "Karsinoma sel basal") tetap tampil dari CF yang
-        // dibangun dari 2 gejala generik, padahal kandidat visual (Jerawat/
-        // Impetigo) sama sekali berbeda. disease_id/action tetap tersimpan
-        // apa adanya untuk audit - ini murni soal apa yang ditonjolkan ke
-        // pengguna.
-        $visualAgrees = $visualAvailable && $visualDisease && $visualDisease->is($textualDisease);
-        $labelSuppressed = ! $visualAgrees && ! $canRecommendMedicine && ($visualUnreliable || $textualUnreliable);
+        // 2026-09-01: dinonaktifkan atas permintaan eksplisit setelah diskusi
+        // trade-off (lihat riwayat percakapan) - selama provider visual (Groq)
+        // sering degraded, gate ini menahan nama penyakit & panel dataset untuk
+        // kasus yang sebenarnya benar (CF teks tinggi, gejala deskriptif cocok),
+        // bukan cuma kasus bukti tipis yang ditargetkannya semula. Pengguna
+        // sadar dan menerima risiko bug lama (nama/obat salah dari gejala yang
+        // kebetulan cocok penyakit lain saat visual tidak bisa memverifikasi)
+        // bisa terulang - lihat test_degraded_visual_without_explicit_outside_scope_still_prevents_otc_recommendation
+        // dan test_single_generic_symptom_match_suppresses_disease_label_even_for_refer_category
+        // di ConsultationFlowTest untuk skenario yang dulu dilindungi gate ini.
+        $labelSuppressed = false;
 
         return [
             'disease' => $textualDisease,
@@ -286,18 +276,10 @@ class FusionDecisionService
      */
     private function textOnlyRule(float $textualCf, bool $visualUnreliable = false): array
     {
-        // $visualUnreliable true berarti visual sempat dianalisis tapi hasilnya
-        // tidak bisa dipercaya - baik model AI eksplisit menolak (outside_scope)
-        // atau parsing gagal total (fallback indeks kemiripan visual, bukan
-        // provider yang tidak sempat dipanggil). CF gejala setinggi apa pun
-        // tidak boleh menimpa bukti berlawanan/tidak meyakinkan itu, karena
-        // kombinasi gejala umum (gatal + bersisik) bisa kebetulan cocok dengan
-        // salah satu dari 16 penyakit padahal foto menunjukkan kondisi yang
-        // sama sekali berbeda dan tidak pernah benar-benar dinilai sistem.
-        if ($visualUnreliable) {
-            return ['F06', 'insufficient_confidence'];
-        }
-
+        // 2026-09-01: paksaan insufficient_confidence saat $visualUnreliable
+        // dinonaktifkan bersamaan dengan label_suppressed di atas - lihat
+        // catatan di decide(). Aksi sekarang murni dari nilai CF gejala lagi,
+        // seperti sebelum gate ini ditambahkan.
         if ($textualCf >= self::HIGH_CF) {
             return ['F06', 'recommend_otc_unsupported'];
         }

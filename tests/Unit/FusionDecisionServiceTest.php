@@ -123,15 +123,16 @@ class FusionDecisionServiceTest extends TestCase
     }
 
     /**
-     * Regresi produksi: foto Vitiligo (di luar 16 penyakit cakupan) dijawab
-     * dengan gejala yang kebetulan sangat mirip Tinea Corporis (CF 99,9%).
-     * Sebelum perbaikan ini, F06 murni berbasis CF teks tetap mengeluarkan
-     * recommend_otc_unsupported untuk Tinea Corporis meski foto sama sekali
-     * tidak mendukungnya - visualUnreliable adalah bukti BERLAWANAN
-     * (bukan sekadar ketiadaan bukti) dan harus menahan rekomendasi obat
-     * berapa pun CF-nya.
+     * 2026-09-01: gate visualUnreliable/textualUnreliable dinonaktifkan atas
+     * permintaan eksplisit (lihat catatan di FusionDecisionService::decide()) -
+     * selama provider visual sering degraded, gate ini menahan nama penyakit &
+     * rekomendasi obat untuk kasus CF teks tinggi yang sebenarnya benar, bukan
+     * cuma kasus bukti tipis yang ditargetkannya semula. F06 sekarang murni
+     * berbasis CF teks lagi, seperti sebelum gate ini ditambahkan - risiko
+     * regresi lama (foto di luar 16 penyakit, gejala kebetulan cocok penyakit
+     * lain) diterima secara sadar.
      */
-    public function test_f06_visual_outside_scope_never_recommends_medicine_even_with_high_cf(): void
+    public function test_f06_visual_outside_scope_no_longer_blocks_medicine_recommendation(): void
     {
         $disease = $this->createDisease('TINEA_CORPORIS');
 
@@ -146,11 +147,9 @@ class FusionDecisionServiceTest extends TestCase
         );
 
         $this->assertSame('F06', $result['fusion_rule_code']);
-        $this->assertSame('insufficient_confidence', $result['action']);
-        $this->assertFalse($result['can_recommend_medicine']);
-        $this->assertTrue($result['label_suppressed']);
-        $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $result['explanation']);
-        $this->assertStringNotContainsString('tinea corporis', $result['explanation']);
+        $this->assertSame('recommend_otc_unsupported', $result['action']);
+        $this->assertTrue($result['can_recommend_medicine']);
+        $this->assertFalse($result['label_suppressed']);
     }
 
     /** Tanpa visualUnreliable, perilaku F06 lama (berbasis CF semata) tidak berubah. */
@@ -174,15 +173,11 @@ class FusionDecisionServiceTest extends TestCase
     }
 
     /**
-     * Regresi produksi 2026-08-30: foto bisul (di luar 16 penyakit) dijawab
-     * seadanya, dan satu-satunya opsi bentuk yang "paling mendekati"
-     * (Benjolan tunggal mengkilap, bobot pakar 0,80 untuk BCC) sendirian
-     * sudah cukup melewati HIGH_CF. textualUnreliable menandai bukti setipis
-     * itu (dari ConsultationWorkflowService, keluasan gejala) sehingga BCC
-     * tidak boleh ditampilkan sebagai nama pasti - meski BCC bergolongan
-     * refer (yang tetap benar secara aksi: tetap disarankan periksa).
+     * 2026-09-01: label_suppressed dinonaktifkan (lihat catatan di
+     * FusionDecisionService::decide()) - textualUnreliable tidak lagi
+     * menyembunyikan nama penyakit, termasuk untuk golongan refer.
      */
-    public function test_f06_textual_unreliable_suppresses_label_even_for_refer_category_disease(): void
+    public function test_f06_textual_unreliable_no_longer_suppresses_label(): void
     {
         $bcc = $this->createDisease('BASAL_CELL_CARCINOMA', 'refer');
 
@@ -198,9 +193,8 @@ class FusionDecisionServiceTest extends TestCase
 
         $this->assertSame('refer', $result['action']);
         $this->assertFalse($result['can_recommend_medicine']);
-        $this->assertTrue($result['label_suppressed']);
-        $this->assertStringNotContainsString('basal cell carcinoma', $result['explanation']);
-        $this->assertStringContainsString('sedikit gejala', $result['explanation']);
+        $this->assertFalse($result['label_suppressed']);
+        $this->assertStringContainsString('basal cell carcinoma', mb_strtolower($result['explanation']));
     }
 
     /** Tanpa textualUnreliable, penyakit refer tetap tampil apa adanya (perilaku lama). */

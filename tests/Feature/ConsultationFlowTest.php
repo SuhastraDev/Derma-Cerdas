@@ -641,17 +641,14 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
-     * Regresi produksi (audit 2026-08-30): foto Vitiligo (di luar 16 penyakit
-     * cakupan) dijawab dengan gejala yang kebetulan sangat mirip Tinea
-     * Corporis. Model AI benar menilai outside_scope=true dan mengembalikan
-     * candidates kosong, tetapi provider_status jatuh ke dataset_fallback
-     * (indeks kemiripan visual, bukan analisis) sehingga hasilnya sebelumnya
-     * tetap recommend_otc_unsupported untuk Kurap badan - padahal foto sama
-     * sekali tidak mendukungnya. outside_scope harus menahan rekomendasi
-     * obat berapa pun CF teksnya, dan metadata harus menyimpan sinyal itu
-     * supaya UI bisa menampilkan peringatan eksplisit.
+     * 2026-09-01: gate visualUnreliable dinonaktifkan atas permintaan eksplisit
+     * (lihat catatan di FusionDecisionService::decide()) - action sekarang
+     * kembali murni berbasis CF teks walau outside_scope=true, seperti sebelum
+     * gate ini ditambahkan. metadata visual_validation tetap menyimpan
+     * outside_scope/observed_description apa adanya untuk ditampilkan di UI,
+     * itu tidak berubah - yang berubah cuma apakah sinyal itu ikut menahan aksi.
      */
-    public function test_visual_outside_scope_prevents_otc_recommendation_despite_high_textual_cf(): void
+    public function test_visual_outside_scope_no_longer_blocks_otc_recommendation(): void
     {
         Storage::fake('public');
         $this->seed(DatabaseSeeder::class);
@@ -692,9 +689,9 @@ class ConsultationFlowTest extends TestCase
 
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
 
-        $this->assertSame('insufficient_confidence', $finalResult->action);
-        $this->assertSame([], $finalResult->recommendations_snapshot);
-        $this->assertStringContainsString('bukan salah satu dari 16 penyakit', $finalResult->explanation);
+        $this->assertSame('recommend_otc_unsupported', $finalResult->action);
+        $this->assertNotSame([], $finalResult->recommendations_snapshot);
+        $this->assertFalse($finalResult->label_suppressed);
 
         $consultation = Consultation::query()->firstOrFail();
         $this->assertTrue($consultation->refresh()->metadata['visual_validation']['outside_scope']);
@@ -708,17 +705,13 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
-     * Regresi lanjutan (audit 2026-08-30, ditemukan lewat verifikasi ulang di
-     * production SETELAH perbaikan di atas dideploy): outside_scope hanya
-     * terisi true saat provider BERHASIL parsing JSON dan menolak dengan
-     * sengaja. Saat parsing gagal total, ai-service tetap jatuh ke
-     * dataset_fallback (validation_status degraded) TAPI outside_scope-nya
-     * default false - kasus produksi nyata DC-20260830-103442-SU6HF tetap
-     * merekomendasikan Clotrimazole/Miconazole untuk foto Vitiligo. Sinyal
-     * yang benar adalah validation_status 'degraded' itu sendiri, bukan
-     * cuma outside_scope.
+     * 2026-09-01: gate visualUnreliable (termasuk sinyal validation_status
+     * degraded) dinonaktifkan atas permintaan eksplisit - lihat catatan di
+     * FusionDecisionService::decide(). Provider yang gagal parsing sama sekali
+     * tidak lagi menahan rekomendasi obat; action kembali murni berbasis CF
+     * teks seperti sebelum gate ini ditambahkan.
      */
-    public function test_degraded_visual_without_explicit_outside_scope_still_prevents_otc_recommendation(): void
+    public function test_degraded_visual_without_explicit_outside_scope_no_longer_blocks_otc_recommendation(): void
     {
         Storage::fake('public');
         $this->seed(DatabaseSeeder::class);
@@ -762,8 +755,9 @@ class ConsultationFlowTest extends TestCase
 
         $finalResult = ConsultationFinalResult::query()->firstOrFail();
 
-        $this->assertSame('insufficient_confidence', $finalResult->action);
-        $this->assertSame([], $finalResult->recommendations_snapshot);
+        $this->assertSame('recommend_otc_unsupported', $finalResult->action);
+        $this->assertNotSame([], $finalResult->recommendations_snapshot);
+        $this->assertFalse($finalResult->label_suppressed);
     }
 
     /**
@@ -776,12 +770,13 @@ class ConsultationFlowTest extends TestCase
      * cocok. Action refer tetap benar (aman), tapi nama spesifiknya harus
      * disembunyikan karena buktinya terlalu tipis untuk memastikan itu.
      *
-     * outside_scope sengaja diset false di sini (beda dari kasus Vitiligo)
-     * supaya textualUnreliable teruji terpisah dari visualUnreliable - kalau
-     * keduanya true sekaligus, tidak jelas mekanisme mana yang sebenarnya
-     * menahan labelnya.
+     * 2026-09-01: label_suppressed dinonaktifkan atas permintaan eksplisit
+     * (lihat catatan di FusionDecisionService::decide()) - nama penyakit
+     * sekarang tetap tampil walau bukti tipis, selama action-nya sendiri
+     * masih benar (refer). Nama test dipertahankan supaya jejak regresi
+     * 2026-08-30 tetap tercatat, meski assersi label_suppressed dibalik.
      */
-    public function test_single_generic_symptom_match_suppresses_disease_label_even_for_refer_category(): void
+    public function test_single_generic_symptom_match_no_longer_suppresses_disease_label(): void
     {
         Storage::fake('public');
         $this->seed(DatabaseSeeder::class);
@@ -822,8 +817,8 @@ class ConsultationFlowTest extends TestCase
         $this->assertSame($cutaneousHorn->id, $finalResult->disease_id);
         $this->assertSame('refer', $finalResult->action);
         $this->assertSame([], $finalResult->recommendations_snapshot);
-        $this->assertTrue($finalResult->label_suppressed);
-        $this->assertStringNotContainsString('Tanduk kulit', $finalResult->explanation);
+        $this->assertFalse($finalResult->label_suppressed);
+        $this->assertStringContainsString('Tanduk kulit', $finalResult->explanation);
 
         $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
             ->assertOk();
@@ -841,8 +836,12 @@ class ConsultationFlowTest extends TestCase
      * namanya yang harus disembunyikan. (Basal Cell Carcinoma dari sesi asli
      * digantikan Tanduk kulit pada 2026-08-31; skenario dan mekanismenya
      * tetap sama.)
+     *
+     * 2026-09-01: label_suppressed dinonaktifkan atas permintaan eksplisit
+     * (lihat catatan di FusionDecisionService::decide()) - nama tetap tampil
+     * sekarang, action refer dari F07 tidak berubah.
      */
-    public function test_red_flag_referral_still_suppresses_thin_evidence_disease_label(): void
+    public function test_red_flag_referral_no_longer_suppresses_thin_evidence_disease_label(): void
     {
         Storage::fake('public');
         $this->seed(DatabaseSeeder::class);
@@ -896,9 +895,8 @@ class ConsultationFlowTest extends TestCase
         // disease_id tetap tersimpan (Tanduk kulit menang CF teks) untuk audit
         // - yang berubah cuma apa yang ditonjolkan ke pengguna.
         $this->assertSame($cutaneousHorn->id, $finalResult->disease_id);
-        $this->assertTrue($finalResult->label_suppressed);
-        $this->assertStringNotContainsString('Tanduk kulit', $finalResult->explanation);
-        $this->assertStringContainsString('tanda bahaya', $finalResult->explanation);
+        $this->assertFalse($finalResult->label_suppressed);
+        $this->assertStringContainsString('Tanduk kulit', $finalResult->explanation);
 
         $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
             ->assertOk();
@@ -914,8 +912,12 @@ class ConsultationFlowTest extends TestCase
      * tidak cukup di sini karena pas terpenuhi tanpa satu pun bukti
      * deskriptif - textualEvidenceIsThin() harus menolaknya lewat syarat
      * kelompok deskriptif, bukan cuma hitungan.
+     *
+     * 2026-09-01: label_suppressed dinonaktifkan atas permintaan eksplisit
+     * (lihat catatan di FusionDecisionService::decide()) - nama tetap tampil
+     * sekarang, action refer dari F07 tidak berubah.
      */
-    public function test_contextual_only_symptoms_without_any_descriptive_match_stay_thin_despite_meeting_the_count(): void
+    public function test_contextual_only_symptoms_without_any_descriptive_match_no_longer_suppress_label(): void
     {
         Storage::fake('public');
         $this->seed(DatabaseSeeder::class);
@@ -968,8 +970,8 @@ class ConsultationFlowTest extends TestCase
         $this->assertSame('F07', $finalResult->fusion_rule_code);
         $this->assertSame('refer', $finalResult->action);
         $this->assertSame($keloid->id, $finalResult->disease_id);
-        $this->assertTrue($finalResult->label_suppressed);
-        $this->assertStringNotContainsString('Keloid', $finalResult->explanation);
+        $this->assertFalse($finalResult->label_suppressed);
+        $this->assertStringContainsString('Keloid', $finalResult->explanation);
     }
 
     /**
