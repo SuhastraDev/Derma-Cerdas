@@ -154,6 +154,75 @@ class AiVisualService
     }
 
     /**
+     * Mode Foto (beta): analisis bebas tanpa candidate_classes 16-penyakit/
+     * dataset SD-198 - lihat QuickScanController. Sengaja terpisah dari
+     * analyze() (konsultasi utama): tidak pernah masuk CF/fusion/rekomendasi
+     * obat, murni referensi edukasi mentah dengan disclaimer eksplisit di UI.
+     *
+     * @return array{provider: string, provider_status: string, is_valid_skin_image: bool, candidates: array<int, array{condition_name: string, confidence: float, observed_description: string}>, warnings: array<int, string>}
+     */
+    public function analyzeOpen(string $imagePath): array
+    {
+        $baseUrl = trim((string) config('services.dermacerdas_ai.url'));
+
+        if ($baseUrl === '') {
+            return [
+                'provider' => 'none',
+                'provider_status' => 'not_configured',
+                'is_valid_skin_image' => false,
+                'candidates' => [],
+                'warnings' => ['AI visual belum dikonfigurasi.'],
+            ];
+        }
+
+        try {
+            $response = Http::timeout((int) config('services.dermacerdas_ai.timeout', 20))
+                ->acceptJson()
+                ->post(rtrim($baseUrl, '/').'/analyze-image-open', [
+                    'image_base64' => base64_encode(Storage::disk('public')->get($imagePath)),
+                ]);
+        } catch (\Throwable $exception) {
+            return [
+                'provider' => 'dermacerdas_ai',
+                'provider_status' => 'unavailable',
+                'is_valid_skin_image' => false,
+                'candidates' => [],
+                'warnings' => ['AI visual tidak dapat dihubungi: '.$exception->getMessage()],
+            ];
+        }
+
+        if ($response->failed()) {
+            return [
+                'provider' => 'dermacerdas_ai',
+                'provider_status' => 'invalid_request',
+                'is_valid_skin_image' => false,
+                'candidates' => [],
+                'warnings' => [(string) ($response->json('detail') ?? 'Gambar tidak valid untuk dianalisis.')],
+            ];
+        }
+
+        $body = $response->json() ?? [];
+
+        $candidates = collect($body['candidates'] ?? [])
+            ->filter(fn ($item): bool => is_array($item) && ! empty($item['condition_name']))
+            ->map(fn (array $item): array => [
+                'condition_name' => (string) $item['condition_name'],
+                'confidence' => max(0.0, min(1.0, (float) ($item['confidence'] ?? 0))),
+                'observed_description' => (string) ($item['observed_description'] ?? ''),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'provider' => (string) ($body['provider'] ?? 'dermacerdas_ai'),
+            'provider_status' => (string) ($body['provider_status'] ?? 'ok'),
+            'is_valid_skin_image' => (bool) ($body['is_valid_skin_image'] ?? false),
+            'candidates' => $candidates,
+            'warnings' => array_values($body['warnings'] ?? []),
+        ];
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $textualRankings
      * @return array<int, string>
      */

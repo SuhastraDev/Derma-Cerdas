@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\KnowledgeBaseController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\ConsultationController;
+use App\Http\Controllers\QuickScanController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -13,6 +14,8 @@ Route::get('/cara-kerja', fn () => Inertia::render('Public/HowItWorks'))->name('
 Route::get('/about', fn () => Inertia::render('Public/About'))->name('about');
 Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
 Route::get('/konsultasi', [ConsultationController::class, 'create'])->name('consultation.start');
+Route::get('/mode-foto', [QuickScanController::class, 'create'])->name('quick-scan.start');
+Route::post('/mode-foto', [QuickScanController::class, 'store'])->name('quick-scan.store');
 Route::get('/riwayat', [ConsultationController::class, 'history'])->name('consultation.history');
 Route::post('/riwayat', [ConsultationController::class, 'checkHistory'])->name('consultation.history.check');
 Route::post('/consultations', [ConsultationController::class, 'store'])->name('consultation.store');

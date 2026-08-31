@@ -168,6 +168,114 @@ class NvidiaVisualClient:
             allowed_symptom_codes=symptom_codes,
         )
 
+    def analyze_open(self, image_base64: str) -> dict[str, Any]:
+        """Mode Foto (beta): tidak dikekang candidate_classes 16-penyakit/
+        dataset SD-198 sama sekali - model dipersilakan menyebut sendiri
+        kemungkinan kondisi kulit apa pun dari pengetahuan umumnya. Sengaja
+        DIPISAH dari analyze()/nvidia_response() (alur konsultasi utama):
+        endpoint ini tidak pernah masuk CF/fusion/rekomendasi obat, murni
+        referensi edukasi mentah dengan disclaimer eksplisit - lihat
+        QuickScanController di sisi Laravel.
+        """
+        if settings.ai_mock_mode or not settings.nvidia_api_key:
+            return self.mock_open_response()
+
+        data_url = self.image_data_url(image_base64)
+
+        try:
+            body = self.chat_completion(
+                self.open_prompt(),
+                data_url,
+                response_format=self.open_response_format(),
+            )
+        except Exception as exc:
+            return self.provider_error_response(exc, "NVIDIA NIM API (mode foto)")
+
+        text = self.completion_text(body)
+
+        return self.open_response_from_text(text)
+
+    def mock_open_response(self) -> dict[str, Any]:
+        return {
+            "provider_status": "mock_mode",
+            "is_valid_skin_image": False,
+            "candidates": [],
+            "warnings": [
+                "AI_MOCK_MODE aktif; mode foto tidak dijalankan agar sistem tidak memberi hasil palsu."
+            ],
+            "raw_response": {"mode": "mock"},
+        }
+
+    def open_prompt(self) -> str:
+        return (
+            "Anda adalah asisten edukasi awal skrining kulit, BUKAN dokter dan BUKAN alat diagnosis. "
+            "Lihat foto kulit berikut dan sebutkan hingga 5 kemungkinan kondisi kulit yang PALING MIRIP "
+            "secara visual, dari pengetahuan umum Anda - tidak dibatasi daftar tertentu. Untuk tiap "
+            "kemungkinan, beri nama kondisi (Indonesia jika ada istilah umumnya), perkiraan keyakinan "
+            "0-1, dan deskripsi singkat APA YANG TERLIHAT DI FOTO (ciri visual), bukan penjelasan umum "
+            "penyakitnya. Urutkan dari yang paling mungkin. Bersikap sangat hati-hati - kalau foto tidak "
+            "jelas, bukan kulit, atau Anda tidak yakin sama sekali, kosongkan candidates dan jelaskan "
+            "kenapa lewat warnings. JANGAN pernah menyarankan obat atau dosis apa pun. "
+            "Balas HANYA dengan JSON valid (tanpa markdown, tanpa penjelasan lain di luar JSON) "
+            "persis berstruktur: "
+            '{"is_valid_skin_image": true, "candidates": '
+            '[{"condition_name": "...", "confidence": 0.0, "observed_description": "..."}], '
+            '"warnings": []}.'
+        )
+
+    def open_response_format(self) -> dict[str, Any]:
+        # json_object (bukan json_schema) supaya konsisten jalan di ketiga
+        # provider - GroqVisualClient.chat_completion() sengaja tidak punya
+        # fallback retry-tanpa-schema seperti kelas dasar ini, dan skema ketat
+        # terbukti tidak selalu didukung modelnya (lihat provider_response()
+        # Groq yang juga memakai json_object, bukan visual_response_format()).
+        # Bentuk JSON persisnya sudah dijelaskan lewat open_prompt().
+        return {"type": "json_object"}
+
+    def open_response_from_text(self, text: str) -> dict[str, Any]:
+        parsed = self.parse_json_text(text)
+
+        raw_candidates = parsed.get("candidates", [])
+        if not isinstance(raw_candidates, list):
+            raw_candidates = []
+
+        candidates = []
+        for item in raw_candidates[:5]:
+            if not isinstance(item, dict):
+                continue
+
+            name = item.get("condition_name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+
+            confidence = item.get("confidence", 0)
+            try:
+                confidence = max(0.0, min(1.0, float(confidence)))
+            except (TypeError, ValueError):
+                confidence = 0.0
+
+            description = item.get("observed_description")
+
+            candidates.append(
+                {
+                    "condition_name": name.strip(),
+                    "confidence": round(confidence, 4),
+                    "observed_description": description.strip() if isinstance(description, str) else "",
+                }
+            )
+
+        warnings = parsed.get("warnings", [])
+        if not isinstance(warnings, list):
+            warnings = []
+
+        return {
+            "provider_status": "ok",
+            "is_valid_skin_image": bool(parsed.get("is_valid_skin_image", False)) or len(candidates) > 0,
+            "candidates": candidates,
+            "warnings": [str(warning) for warning in warnings],
+            "raw_response": {"text": text, "model": self.model_name()},
+        }
+
     def validate_skin_image(self, image_base64: str) -> dict[str, Any]:
         if settings.ai_mock_mode or not settings.nvidia_api_key:
             return {

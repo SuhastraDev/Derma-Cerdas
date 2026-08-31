@@ -6,6 +6,7 @@ const navItems = [
     { label: 'Home', routeName: 'home', path: '/' },
     { label: 'Cara Kerja', routeName: 'how-it-works', path: '/cara-kerja' },
     { label: 'Konsultasi', routeName: 'consultation.start', path: '/konsultasi' },
+    { label: 'Mode Foto (Beta)', routeName: 'quick-scan.start', path: '/mode-foto' },
     { label: 'Riwayat', routeName: 'consultation.history', path: '/riwayat' },
     { label: 'About', routeName: 'about', path: '/about' },
 ];

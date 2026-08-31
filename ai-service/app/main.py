@@ -10,6 +10,8 @@ from app.schemas import (
     AssessRedFlagsResponse,
     ImageValidationRequest,
     ImageValidationResponse,
+    OpenAnalyzeRequest,
+    OpenAnalyzeResponse,
 )
 from app.services.analysis_service import VisualAnalysisService
 from app.services.dataset_visual_index import DatasetVisualIndex
@@ -55,6 +57,34 @@ def analyze_image(payload: AnalyzeImageRequest) -> AnalyzeImageResponse:
 
     service = VisualAnalysisService(visual_client())
     return service.analyze(payload, validation)
+
+
+@app.post("/analyze-image-open", response_model=OpenAnalyzeResponse)
+def analyze_image_open(payload: OpenAnalyzeRequest) -> OpenAnalyzeResponse:
+    """Mode Foto (beta): analisis bebas tanpa candidate_classes 16-penyakit/
+    dataset SD-198 - lihat NvidiaVisualClient.analyze_open(). Terpisah dari
+    /analyze-image supaya prompt/skema longgar ini tidak pernah bersinggungan
+    dengan alur konsultasi utama (CF/fusion/rekomendasi obat)."""
+    validator = ImageValidator()
+
+    try:
+        validation = validator.validate_base64(payload.image_base64)
+    except ImageValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not validation.is_valid:
+        raise HTTPException(status_code=422, detail="Gambar tidak valid untuk dianalisis.")
+
+    client = visual_client()
+    result = client.analyze_open(payload.image_base64)
+
+    return OpenAnalyzeResponse(
+        provider=client.provider,
+        provider_status=str(result.get("provider_status", "ok")),
+        is_valid_skin_image=bool(result.get("is_valid_skin_image", False)),
+        candidates=result.get("candidates", []),
+        warnings=[*validation.warnings, *result.get("warnings", [])],
+    )
 
 
 @app.post("/assess-red-flags", response_model=AssessRedFlagsResponse)

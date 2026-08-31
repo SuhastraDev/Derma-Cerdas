@@ -51,6 +51,24 @@ class AnalyzeImageResponse(BaseModel):
     raw_response: dict = Field(default_factory=dict)
 
 
+class OpenAnalyzeRequest(BaseModel):
+    image_base64: str = Field(..., min_length=16)
+
+
+class OpenVisualCandidate(BaseModel):
+    condition_name: str
+    confidence: float = Field(..., ge=0, le=1)
+    observed_description: str = ""
+
+
+class OpenAnalyzeResponse(BaseModel):
+    provider: str
+    provider_status: str = "ok"
+    is_valid_skin_image: bool
+    candidates: list[OpenVisualCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RedFlagQuestion(BaseModel):
     code: str
     question: str
