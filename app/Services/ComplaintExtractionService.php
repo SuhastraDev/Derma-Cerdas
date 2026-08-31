@@ -115,10 +115,13 @@ class ComplaintExtractionService
             'P2_GELEMBUNG' => [0.75, ['lepuh', 'melepuh', 'gelembung', 'bergerombol']],
             'P2_KERAK' => [0.75, ['keropeng', 'krusta', 'berkerak', 'bernanah']],
             'P2_MERAHLUAS' => [0.5, ['kemerahan', 'ruam', 'bercak merah']],
+            'P2_KUKUBERUBAH' => [0.8, ['kuku menebal', 'kuku rapuh', 'kuku berubah warna', 'kuku rusak']],
+            'P2_TANDUK' => [0.8, ['tanduk', 'seperti tanduk', 'menjulang keras']],
 
             'P3_HALUS' => [0.6, ['bersisik', 'sisik halus']],
             'P3_TEBAL' => [0.7, ['sisik tebal', 'keperakan', 'mengelupas berlapis']],
             'P3_KERING' => [0.6, ['kulit kering', 'pecah pecah', 'pecah-pecah']],
+            'P3_SISIKIKAN' => [0.85, ['sisik ikan', 'seperti sisik ikan', 'kotak kotak', 'kotak-kotak']],
 
             'P4_GATAL' => [0.6, ['gatal', 'digaruk', 'garuk']],
             'P4_NYERI' => [0.75, ['nyeri', 'menusuk', 'ngilu']],
@@ -131,6 +134,9 @@ class ComplaintExtractionService
             'P5_TAHUN' => [0.6, ['bertahun', 'kambuh', 'berulang']],
 
             'P6_SATUSISI' => [0.75, ['satu sisi', 'sebelah kiri saja', 'sebelah kanan saja']],
+            'P6_SIMETRIS' => [0.5, ['kedua sisi', 'dua sisi', 'simetris']],
+            'P6_SETEMPAT' => [0.5, ['satu tempat saja', 'hanya di situ saja']],
+            'P6_TERSEBAR' => [0.5, ['titik terpisah', 'titik titik terpisah', 'tersebar tidak beraturan']],
 
             'P7_KONTAK' => [0.7, ['sabun', 'detergen', 'kosmetik', 'skincare', 'parfum', 'logam', 'tanaman', 'alergi']],
             'P7_KERINGAT' => [0.7, ['berkeringat', 'keringat', 'lembap', 'lembab']],
