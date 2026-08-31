@@ -467,6 +467,34 @@ export default function Result({
                                         </figure>
                                     ))}
                                 </div>
+                            ) : finalResult?.secondary_visual_note ? (
+                                <div className="mt-3 flex h-80 flex-col justify-center rounded-xl border border-dashed border-emerald-200 bg-white p-4 text-sm leading-6 text-slate-700">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Foto juga menyerupai {finalResult.secondary_visual_note.disease_name_indonesian}
+                                        {' '}({percent(finalResult.secondary_visual_note.visual_score)})
+                                    </p>
+                                    <p className="mt-2 line-clamp-5">
+                                        {finalResult.secondary_visual_note.description ??
+                                            'Kondisi ini di luar 16 penyakit yang dikenali sistem, sehingga tidak punya contoh dataset lokal untuk dibandingkan.'}
+                                    </p>
+                                    {finalResult.secondary_visual_note.source_note && (
+                                        <div className="mt-2 text-xs">
+                                            <SourceLinkList sourceNote={finalResult.secondary_visual_note.source_note} />
+                                        </div>
+                                    )}
+                                </div>
+                            ) : consultation.visual_validation?.observed_description ? (
+                                <div className="mt-3 flex h-80 flex-col justify-center rounded-xl border border-dashed border-emerald-200 bg-white p-4 text-sm leading-6 text-slate-700">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                        Ciri yang terlihat AI di foto
+                                    </p>
+                                    <p className="mt-2 line-clamp-6">
+                                        {consultation.visual_validation.observed_description}
+                                    </p>
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Deskripsi visual mentah, bukan nama penyakit — foto ini kemungkinan di luar 16 kondisi yang dikenali sistem sehingga tidak ada contoh dataset lokal untuk dibandingkan.
+                                    </p>
+                                </div>
                             ) : (
                                 <div className="mt-3 flex h-80 items-center justify-center rounded-xl border border-dashed border-emerald-200 bg-white px-4 text-center text-sm leading-6 text-slate-500">
                                     Contoh dataset untuk hasil ini belum ditemukan di folder lokal `datasets/sd-198`.
