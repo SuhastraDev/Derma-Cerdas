@@ -24,17 +24,22 @@ class ConsultationWorkflowService
     /**
      * Jumlah minimal gejala BERBEDA yang harus menyumbang CF ke kandidat teks
      * teratas sebelum CF-nya dianggap cukup meyakinkan untuk menyebut nama
-     * penyakit spesifik saat F06 (visual tidak tersedia/tidak bisa dipercaya).
+     * penyakit spesifik saat visual tidak setuju/tidak tersedia (F04/F05/F06,
+     * termasuk F07 saat tanda bahaya aktif - lihat FusionDecisionService::decide()).
      *
-     * Regresi produksi 2026-08-30: penyakit di luar 16 (mis. bisul) dijawab
-     * seadanya, dan SATU jawaban yang "paling mendekati" (mis. "benjolan
-     * tunggal mengkilap" untuk Basal Cell Carcinoma, bobot pakar 0,80) sudah
-     * cukup sendirian melewati HIGH_CF (0,60) - karena tidak ada satu pun
-     * gejala di 16 penyakit yang ditandai wajib (is_required selalu false,
-     * lihat DatabaseSeeder::seedQuestionRules()). CF akhir bisa tinggi tanpa
-     * benar-benar dibangun dari bukti yang saling menguatkan.
+     * Regresi produksi 2026-08-30 (bisul, jawaban seadanya): SATU jawaban yang
+     * "paling mendekati" (mis. "benjolan tunggal mengkilap" untuk Basal Cell
+     * Carcinoma, bobot pakar 0,80) sudah cukup sendirian melewati HIGH_CF -
+     * tidak ada satu pun gejala di 16 penyakit yang ditandai wajib.
+     *
+     * Ambang semula 2, tetapi kasus produksi lanjutan menunjukkan 2 gejala
+     * generik (mis. "benjolan mengkilap" + "hanya di satu tempat" - dua ciri
+     * yang juga berlaku untuk bisul biasa) masih bisa mengumpulkan CF 92%
+     * untuk BCC padahal visual justru mengarah ke Jerawat/Impetigo. Dinaikkan
+     * ke 3 supaya kombinasi generik-tapi-kebetulan-cocok seperti itu tetap
+     * dianggap tipis.
      */
-    private const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 2;
+    private const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 3;
 
     public function __construct(
         private readonly CertaintyFactorService $certaintyFactorService,

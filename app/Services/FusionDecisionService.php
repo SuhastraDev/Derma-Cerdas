@@ -66,15 +66,34 @@ class FusionDecisionService
         );
         $action = $this->enforceDiseaseScope($textualDisease, $action);
 
-        // Nama penyakit spesifik disembunyikan dari tampilan utama HANYA saat
-        // F06 dipaksa turun oleh bukti yang tidak bisa dipercaya (visual atau
-        // teks) - beda dari CF rendah biasa (F06 dengan banyak gejala dijawab
-        // tapi memang lemah), yang tetap layak menampilkan nama sebagai
-        // informasi awal. disease_id/action tetap tersimpan apa adanya untuk
-        // audit - ini murni soal apa yang ditonjolkan ke pengguna.
-        $labelSuppressed = (! $visualAvailable || ! $visualDisease)
-            && ! $hasRedFlags
-            && ($visualUnreliable || $textualUnreliable);
+        $canRecommendMedicine = in_array($action, [
+            'recommend_otc',
+            'recommend_otc_observe',
+            'recommend_otc_mismatch',
+            'recommend_otc_unsupported',
+        ], true);
+
+        // Nama penyakit spesifik disembunyikan dari tampilan utama setiap kali
+        // (a) visual TIDAK independen setuju dengan kandidat teks (tidak
+        // tersedia, tidak bisa dipercaya, atau justru mengarah ke penyakit
+        // lain), (b) buktinya sendiri lemah (visual tidak bisa dipercaya ATAU
+        // teks dibangun dari terlalu sedikit gejala), DAN (c) hasil akhirnya
+        // TIDAK memberi obat. Syarat (c) sengaja membatasi F04 (mismatch, CF
+        // tinggi) tetap menampilkan nama seperti sebelumnya - F04 sudah punya
+        // mekanisme transparansinya sendiri (catatan mismatch di explanation)
+        // dan tetap memberi obat, jadi menyembunyikan namanya sambil tetap
+        // menyerahkan obat untuk penyakit yang "tidak disebutkan" itu cuma
+        // membingungkan. Berlaku penuh di F05/F06/F07 (semuanya sudah tidak
+        // memberi obat) - termasuk saat tanda bahaya memaksa refer, karena
+        // regresi produksi 2026-08-30 menunjukkan F07 melewati seluruh
+        // pengecekan F04-F06 (resolveRule() mengembalikannya duluan), sehingga
+        // nama penyakit (mis. "Karsinoma sel basal") tetap tampil dari CF yang
+        // dibangun dari 2 gejala generik, padahal kandidat visual (Jerawat/
+        // Impetigo) sama sekali berbeda. disease_id/action tetap tersimpan
+        // apa adanya untuk audit - ini murni soal apa yang ditonjolkan ke
+        // pengguna.
+        $visualAgrees = $visualAvailable && $visualDisease && $visualDisease->is($textualDisease);
+        $labelSuppressed = ! $visualAgrees && ! $canRecommendMedicine && ($visualUnreliable || $textualUnreliable);
 
         return [
             'disease' => $textualDisease,
@@ -85,12 +104,7 @@ class FusionDecisionService
             'fusion_rule_code' => $ruleCode,
             'action' => $action,
             'label_suppressed' => $labelSuppressed,
-            'can_recommend_medicine' => in_array($action, [
-                'recommend_otc',
-                'recommend_otc_observe',
-                'recommend_otc_mismatch',
-                'recommend_otc_unsupported',
-            ], true),
+            'can_recommend_medicine' => $canRecommendMedicine,
             'explanation' => $this->explanation(
                 $textualDisease,
                 $visualDisease,
@@ -99,8 +113,7 @@ class FusionDecisionService
                 $textualCf,
                 $visualAvailable,
                 $hasRedFlags,
-                $visualUnreliable,
-                $textualUnreliable
+                $labelSuppressed
             ),
         ];
     }
@@ -184,41 +197,48 @@ class FusionDecisionService
         float $textualCf,
         bool $visualAvailable,
         bool $hasRedFlags,
-        bool $visualUnreliable = false,
-        bool $textualUnreliable = false
+        bool $labelSuppressed = false
     ): string {
         $diseaseName = $textualDisease->name_indonesian ?: $textualDisease->name;
         $cfPercent = sprintf('%.1f%%', $textualCf * 100);
 
-        if ($hasRedFlags) {
-            return sprintf(
-                'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan (kandidat gejala teratas: %s, CF %s).',
-                $diseaseName,
-                $cfPercent
-            );
-        }
-
-        // Diperiksa SEBELUM cabang golongan penyakit di bawah (refer/educate_only),
-        // karena penyakit golongan refer (mis. BCC) akan selalu masuk cabang
-        // "Scope rujukan" itu duluan - kalau tidak dicegat di sini, pesan bukti
-        // tipis tidak akan pernah terbaca untuk golongan itu, padahal justru di
-        // situ paling berisiko (nama kanker ditampilkan dari bukti yang tipis).
-        if ((! $visualAvailable || ! $visualDisease) && ! $hasRedFlags && ($visualUnreliable || $textualUnreliable)) {
-            // Nama penyakit sengaja TIDAK disebut di sini (beda dari pesan F06
-            // biasa di bawah) - kalau nama disembunyikan dari "Kemungkinan
-            // utama" karena buktinya tipis, menyebutnya di sini lewat "Alasan
-            // sistem" cuma membocorkannya lewat pintu belakang.
-            if ($visualUnreliable) {
+        // Diperiksa PALING AWAL, sebelum cabang tanda bahaya maupun cabang
+        // golongan penyakit di bawah - lihat decide() untuk kondisi lengkapnya.
+        // Nama penyakit sengaja TIDAK disebut di sini: kalau sudah disembunyikan
+        // dari "Kemungkinan utama" karena buktinya lemah, menyebutnya lewat
+        // "Alasan sistem" cuma membocorkannya lewat pintu belakang. Ini berlaku
+        // SAMA untuk F04/F05/F06 maupun F07 (tanda bahaya) - tanda bahaya
+        // menentukan urgensi rujukannya, bukan seberapa yakin nama penyakitnya.
+        if ($labelSuppressed) {
+            if ($hasRedFlags) {
                 return sprintf(
-                    'Aturan %s: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, sehingga rekomendasi obat ditahan meski keyakinan gejala terhadap salah satu kandidat cukup tinggi (CF %s). Disarankan konsultasi langsung untuk memastikan kondisi sebenarnya, bukan berdasarkan satu nama penyakit tertentu.',
+                    'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan. Kandidat penyakit teratas belum cukup meyakinkan untuk dipastikan namanya (CF %s), sehingga keputusan ini murni berdasarkan tanda bahaya yang terdeteksi, bukan satu diagnosis tertentu.',
+                    $cfPercent
+                );
+            }
+
+            if (! $visualAvailable || ! $visualDisease) {
+                return sprintf(
+                    'Aturan %s: analisis visual menilai foto ini kemungkinan bukan salah satu dari 16 penyakit yang dikenali sistem, atau jawaban gejala cuma dibangun dari sedikit gejala yang cocok (CF %s) - belum cukup spesifik untuk memastikan satu nama penyakit. Disarankan konsultasi langsung untuk kepastian, bukan berdasarkan satu nama penyakit tertentu.',
                     $ruleCode,
                     $cfPercent
                 );
             }
 
+            $visualName = $visualDisease->name_indonesian ?: $visualDisease->name;
+
             return sprintf(
-                'Aturan %s: jawaban gejala mengarah ke salah satu kandidat (CF %s), tetapi cuma dibangun dari sedikit gejala yang cocok - belum cukup spesifik untuk memastikan salah satu dari 16 kondisi yang dikenali sistem. Disarankan konsultasi langsung untuk kepastian, bukan berdasarkan satu nama penyakit tertentu.',
+                'Aturan %s: hasil visual justru mengarah ke %s, berbeda dari kandidat gejala teratas yang buktinya sendiri belum cukup kuat untuk dipastikan (CF %s hanya dari sedikit gejala yang cocok) - belum cukup meyakinkan untuk menyebut satu nama penyakit pasti. Disarankan konsultasi langsung untuk kepastian.',
                 $ruleCode,
+                $visualName,
+                $cfPercent
+            );
+        }
+
+        if ($hasRedFlags) {
+            return sprintf(
+                'Aturan F07: terdeteksi tanda bahaya sehingga seluruh rekomendasi obat ditahan dan pengguna diarahkan ke tenaga kesehatan (kandidat gejala teratas: %s, CF %s).',
+                $diseaseName,
                 $cfPercent
             );
         }

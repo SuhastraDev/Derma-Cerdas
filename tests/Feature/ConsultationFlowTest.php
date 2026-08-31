@@ -826,6 +826,80 @@ class ConsultationFlowTest extends TestCase
     }
 
     /**
+     * Regresi produksi 2026-08-31 (sesi DC-20260831-143321-ZIS3E): keluhan
+     * bisul asli - "benjolan..., berisi nanah, dan terasa nyeri" - dengan
+     * benar memicu tanda bahaya (SEVERE_PAIN + PUS_OR_WIDE_INFECTION) via F07,
+     * yang MEMANG benar secara medis (nyeri hebat + nanah wajib diperiksa).
+     * Tapi F07 melewati SELURUH pengecekan F04-F06 di resolveRule(), sehingga
+     * nama "Karsinoma sel basal" tetap tampil dari CF 92% yang cuma dibangun
+     * dari 2 gejala generik (benjolan mengkilap + hanya di satu tempat) -
+     * padahal kandidat visual sendiri (Jerawat/Impetigo) tidak pernah
+     * menyebut BCC sama sekali. Rujukannya tetap benar; namanya yang harus
+     * disembunyikan.
+     */
+    public function test_red_flag_referral_still_suppresses_thin_evidence_disease_label(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $jerawat = Disease::query()->where('code', 'ACNE_VULGARIS')->firstOrFail();
+
+        $this->mock(AiVisualService::class, function ($mock) use ($jerawat): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'outside_scope' => false,
+                    'observed_description' => '',
+                    'candidates' => [[
+                        'disease' => $jerawat,
+                        'provider' => 'dermacerdas_ai',
+                        'visual_score' => 0.85,
+                        'visual_reason' => 'Pustula pada dasar kemerahan khas untuk jerawat meradang.',
+                        'raw_response' => [],
+                    ]],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+
+            $mock->shouldReceive('assessRedFlags')->andReturn([]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Bisul Nyeri',
+            'complaint_text' => 'benjolan pada kulit yang berwarna merah, berisi nanah, dan terasa nyeri.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([
+                'P2_BENJOLAN' => 1.0,
+                'P6_SETEMPAT' => 1.0,
+            ]),
+            'red_flags' => $this->redFlags([
+                'SEVERE_PAIN' => true,
+                'PUS_OR_WIDE_INFECTION' => true,
+            ]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+        $bcc = Disease::query()->where('code', 'BASAL_CELL_CARCINOMA')->firstOrFail();
+
+        $this->assertSame('F07', $finalResult->fusion_rule_code);
+        $this->assertSame('refer', $finalResult->action);
+        // disease_id tetap tersimpan (BCC menang CF teks) untuk audit - yang
+        // berubah cuma apa yang ditonjolkan ke pengguna.
+        $this->assertSame($bcc->id, $finalResult->disease_id);
+        $this->assertTrue($finalResult->label_suppressed);
+        $this->assertStringNotContainsString('Karsinoma sel basal', $finalResult->explanation);
+        $this->assertStringContainsString('tanda bahaya', $finalResult->explanation);
+
+        $this->get(route('consultation.result', $consultation = Consultation::query()->firstOrFail()->session_code))
+            ->assertOk();
+    }
+
+    /**
      * Golongan klinis DatasetDiseaseMapper (mis. VIRAL_EDUCATION untuk
      * kutil/molluscum) tidak pernah dibuat lewat DatabaseSeeder biasa kecuali
      * kelas datasetnya sudah dipetakan sebelumnya. Dibuat langsung di sini
