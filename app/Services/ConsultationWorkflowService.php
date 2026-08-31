@@ -22,39 +22,14 @@ class ConsultationWorkflowService
     private const VISUAL_STRONG = 0.55;
 
     /**
-     * Jumlah minimal gejala BERBEDA yang harus menyumbang CF ke kandidat teks
-     * teratas sebelum CF-nya dianggap cukup meyakinkan untuk menyebut nama
-     * penyakit spesifik saat visual tidak setuju/tidak tersedia (F04/F05/F06,
-     * termasuk F07 saat tanda bahaya aktif - lihat FusionDecisionService::decide()).
-     *
-     * Regresi produksi 2026-08-30 (bisul, jawaban seadanya): SATU jawaban yang
-     * "paling mendekati" (mis. "benjolan tunggal mengkilap" untuk Basal Cell
-     * Carcinoma, bobot pakar 0,80) sudah cukup sendirian melewati HIGH_CF -
-     * tidak ada satu pun gejala di 16 penyakit yang ditandai wajib.
-     *
-     * Menaikkan angka ini saja terbukti permainan kucing-tikus: kasus produksi
-     * lanjutan (sesi DC-20260831-150845-TQNB0) menunjukkan pengguna dengan
-     * BENAR memilih "Tidak yakin/tidak cocok" untuk bentuk, permukaan, rasa,
-     * DAN durasi (P2-P5) - tapi CF Keloid tetap 87% cuma dari 3 gejala
-     * KONTEKSTUAL (lokasi "badan", sebaran "satu tempat", usia "remaja") yang
-     * juga kebetulan berlaku untuk bisul biasa. Lihat DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES.
+     * Selisih minimal skor visual kandidat teratas terhadap kandidat visual
+     * lain (penyakit berbeda) sebelum boleh menggeser keputusan lewat F08 -
+     * sejalan dengan FusionDecisionService::MIN_CF_MARGIN_FOR_CONFIDENT_LABEL
+     * di sisi teks, supaya kandidat visual yang cuma menang tipis (model tidak
+     * benar-benar yakin, skornya menyebar rata ke beberapa kandidat) tidak
+     * ikut memaksakan nama penyakit.
      */
-    private const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 3;
-
-    /**
-     * Kelompok pertanyaan P2 (bentuk), P3 (permukaan/sisik), P4 (rasa), dan P5
-     * (perjalanan waktu) menggambarkan KARAKTER lesi itu sendiri - inilah yang
-     * sebenarnya membedakan satu penyakit dari yang lain. P1 (lokasi), P6
-     * (sebaran), P7 (pemicu), dan P9 (usia) itu kontekstual: hampir semua
-     * penyakit BISA muncul "di badan", "di satu tempat saja", "tanpa pemicu
-     * jelas", atau "pada usia berapa pun" - termasuk kondisi yang sama sekali
-     * di luar 16 penyakit cakupan. CF yang dibangun murni dari kelompok
-     * kontekstual, tanpa satu pun dari kelompok deskriptif, tetap dianggap
-     * tipis berapa pun jumlah gejalanya - lihat komentar di atas.
-     *
-     * @var array<int, string>
-     */
-    private const DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES = ['P2', 'P3', 'P4', 'P5'];
+    private const MIN_VISUAL_MARGIN_FOR_CONFIDENT_LABEL = 0.15;
 
     public function __construct(
         private readonly CertaintyFactorService $certaintyFactorService,
@@ -186,44 +161,6 @@ class ConsultationWorkflowService
     {
         return ($visualAnalysis['validation_status'] ?? null) === 'degraded'
             || (bool) ($visualAnalysis['outside_scope'] ?? false);
-    }
-
-    /**
-     * Bukti teks dianggap tipis kalau (a) terlalu sedikit gejala BERBEDA yang
-     * cocok, ATAU (b) tidak satu pun yang cocok berasal dari kelompok
-     * deskriptif (bentuk/permukaan/rasa/durasi - lihat
-     * DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES). Syarat (b) yang menutup celah:
-     * beberapa gejala kontekstual (lokasi, sebaran, pemicu, usia) bisa saja
-     * jumlahnya cukup banyak tapi tidak satu pun benar-benar menggambarkan
-     * ciri lesi itu sendiri, sehingga tetap bisa kebetulan cocok dengan
-     * kondisi apa pun di luar 16 penyakit cakupan.
-     *
-     * @param  array<int, array{symptom_code?: string|null}>  $matchedSymptoms
-     */
-    private function textualEvidenceIsThin(array $matchedSymptoms): bool
-    {
-        if (count($matchedSymptoms) < self::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL) {
-            return true;
-        }
-
-        foreach ($matchedSymptoms as $match) {
-            if (in_array($this->symptomGroupPrefix((string) ($match['symptom_code'] ?? '')), self::DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES, true)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Mengambil awalan kelompok pertanyaan dari kode gejala, mis. "P2" dari
-     * "P2_CINCIN". Kode gejala di luar bank pertanyaan 16-kelas (mis. dari
-     * fixture pengujian lama) mengembalikan string kosong, yang aman karena
-     * tidak akan pernah cocok dengan DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES.
-     */
-    private function symptomGroupPrefix(string $symptomCode): string
-    {
-        return preg_match('/^(P\d+)_/', $symptomCode, $matches) === 1 ? $matches[1] : '';
     }
 
     /**
@@ -435,7 +372,7 @@ class ConsultationWorkflowService
         /** @var Disease $textualDisease */
         $textualDisease = $topTextual['disease'];
         $textualCf = (float) ($topTextual['textual_cf'] ?? 0.0);
-        $textualUnreliable = $this->textualEvidenceIsThin($topTextual['matched_symptoms'] ?? []);
+        $textualUnreliable = ! $this->fusionDecisionService->textualCandidateIsReliable($topTextual, $textualRankings);
 
         // Pv: kandidat visual teratas. Kosong berarti F06 (citra tak dapat dianalisis / di luar ruang lingkup).
         $topVisual = $visualCandidates[0] ?? null;
@@ -478,7 +415,7 @@ class ConsultationWorkflowService
         } elseif (
             ! $hasRedFlags
             && $hasValidatedVisual
-            && $this->visualFindingMustNotBeMasked($visualDisease, $visualScore, $textualDisease, $textualCf)
+            && $this->visualFindingMustNotBeMasked($visualDisease, $visualScore, $textualDisease, $textualCf, $visualCandidates)
         ) {
             $decision = $this->fusionDecisionService->decideVisualOnly($visualDisease, $visualScore);
             $finalDisease = $visualDisease;
@@ -574,15 +511,23 @@ class ConsultationWorkflowService
      *   jalur Certainty Factor memang tidak pernah bisa membenarkannya; dan
      * - Pv bergolongan rujuk (kanker, autoimun, infeksi bakteri) sehingga
      *   keselamatan didahulukan berapa pun CFt, ATAU CFt sendiri belum
-     *   mencapai batas "cukup yakin" (Tabel 3.10).
+     *   mencapai batas "cukup yakin" (Tabel 3.10); dan
+     * - Pv unggul dengan margin yang cukup dari kandidat visual terbaik
+     *   BERIKUTNYA yang penyakitnya berbeda - model yang skornya menyebar
+     *   rata ke beberapa kandidat (tidak benar-benar yakin) tidak boleh
+     *   memaksakan satu nama penyakit, sejalan dengan gerbang margin di sisi
+     *   teks (FusionDecisionService::textualCandidateIsReliable()).
      *
      * Hasilnya tidak pernah berupa rekomendasi obat, hanya edukasi atau rujukan.
+     *
+     * @param  array<int, array<string, mixed>>  $visualCandidates  Seluruh kandidat visual (bukan cuma Pv) untuk menghitung margin.
      */
     private function visualFindingMustNotBeMasked(
         ?Disease $visualDisease,
         float $visualScore,
         Disease $textualDisease,
-        float $textualCf
+        float $textualCf,
+        array $visualCandidates = []
     ): bool {
         if (! $visualDisease || $visualScore < self::VISUAL_STRONG) {
             return false;
@@ -592,8 +537,32 @@ class ConsultationWorkflowService
             return false;
         }
 
+        if (! $this->visualMarginIsWideEnough($visualDisease, $visualScore, $visualCandidates)) {
+            return false;
+        }
+
         return $visualDisease->default_action === 'refer'
             || $textualCf < FusionDecisionService::HIGH_CF;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $visualCandidates
+     */
+    private function visualMarginIsWideEnough(Disease $visualDisease, float $visualScore, array $visualCandidates): bool
+    {
+        $runnerUp = 0.0;
+
+        foreach ($visualCandidates as $candidate) {
+            $candidateDisease = $candidate['disease'] ?? null;
+
+            if (! $candidateDisease instanceof Disease || $candidateDisease->is($visualDisease)) {
+                continue;
+            }
+
+            $runnerUp = max($runnerUp, (float) ($candidate['visual_score'] ?? 0.0));
+        }
+
+        return ($visualScore - $runnerUp) >= self::MIN_VISUAL_MARGIN_FOR_CONFIDENT_LABEL;
     }
 
     /**

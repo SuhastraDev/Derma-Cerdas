@@ -776,6 +776,11 @@ export default function Result({
                                 Perkiraan kemiripan visual kasar — bukan analisis AI tervalidasi
                             </p>
                         )}
+                        {finalResult?.label_suppressed && visualResults.length > 0 && (
+                            <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950">
+                                Skor di bawah ini murni informasi tambahan dari analisis visual — belum cukup meyakinkan untuk dipastikan sebagai diagnosis, sejalan dengan &ldquo;Kemungkinan utama&rdquo; di atas yang juga belum dapat dipastikan.
+                            </p>
+                        )}
                         <div className="mt-4 space-y-3">
                             {visualResults.length > 0 ? (
                                 visualResults.map((visual) => (

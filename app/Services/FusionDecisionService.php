@@ -20,6 +20,126 @@ class FusionDecisionService
     public const MEDIUM_CF = 0.40;
 
     /**
+     * Jumlah minimal gejala BERBEDA yang harus menyumbang CF ke sebuah kandidat
+     * sebelum CF-nya dianggap cukup meyakinkan untuk menyebut nama penyakit
+     * spesifik. Regresi produksi 2026-08-30 (bisul, jawaban seadanya): SATU
+     * jawaban yang "paling mendekati" (mis. "benjolan tunggal mengkilap" untuk
+     * Basal Cell Carcinoma, bobot pakar 0,80) sudah cukup sendirian melewati
+     * HIGH_CF - tidak ada satu pun gejala di 16 penyakit yang ditandai wajib.
+     */
+    public const MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL = 3;
+
+    /**
+     * Kelompok pertanyaan P2 (bentuk), P3 (permukaan/sisik), P4 (rasa), dan P5
+     * (perjalanan waktu) menggambarkan KARAKTER lesi itu sendiri. P1 (lokasi),
+     * P6 (sebaran), P7 (pemicu), dan P9 (usia) itu kontekstual: hampir semua
+     * penyakit bisa muncul "di badan", "di satu tempat saja", atau "pada usia
+     * berapa pun" - termasuk kondisi di luar 16 penyakit cakupan. Kasus
+     * produksi 2026-08-31 (sesi DC-20260831-150845-TQNB0): 3 gejala
+     * kontekstual saja cukup membangun CF 87% untuk Keloid walau pengguna
+     * dengan benar menjawab "tidak ada yang cocok" untuk semua ciri lesinya.
+     *
+     * @var array<int, string>
+     */
+    public const DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES = ['P2', 'P3', 'P4', 'P5'];
+
+    /**
+     * Selisih minimal CF kandidat teratas terhadap kandidat teks lain (dari
+     * disease_id berbeda) sebelum dianggap benar-benar unggul, bukan cuma
+     * kebetulan menang tipis karena gejalanya generik dan cocok ke banyak
+     * penyakit sekaligus. Satu pengecekan ini menggantikan kebutuhan menambah
+     * syarat ad-hoc baru setiap kali ditemukan kombinasi gejala generik lain
+     * yang lolos - kombinasi generik apa pun cenderung menaikkan CF beberapa
+     * penyakit sekaligus, sehingga selisihnya otomatis kecil.
+     */
+    public const MIN_CF_MARGIN_FOR_CONFIDENT_LABEL = 0.15;
+
+    /**
+     * Gerbang keyakinan bersatu untuk kandidat teks - dipakai konsisten di F06
+     * (lewat ConsultationWorkflowService) supaya nama penyakit spesifik tidak
+     * ditampilkan dari bukti tipis saat visual tidak tersedia/tidak setuju.
+     *
+     * Dua lapis: substansi bukti (keluasan + kelompok deskriptif, lihat
+     * textualEvidenceHasSubstance()) DITAMBAH margin - CF kandidat ini harus
+     * unggul MIN_CF_MARGIN_FOR_CONFIDENT_LABEL dari kandidat teks terbaik
+     * BERIKUTNYA yang penyakitnya berbeda. Kandidat generik yang kebetulan
+     * cocok ke banyak penyakit cenderung menaikkan CF beberapa penyakit
+     * sekaligus, sehingga selisihnya kecil.
+     *
+     * Sengaja TIDAK dipakai untuk F11 (lihat findDualConfirmedCandidate()) -
+     * margin murni-teks di sini menghukum kasus F11 yang sah: kandidat dual-
+     * confirm boleh saja punya CF lebih rendah dari penyakit lain yang murni
+     * unggul di teks (mis. gejala tumpang tindih banyak penyakit sekaligus),
+     * karena visual-lah yang jadi bukti independen kedua, bukan keunggulan
+     * margin di dalam teks itu sendiri. F11 cukup pakai
+     * textualEvidenceHasSubstance() saja.
+     *
+     * @param  array{disease: Disease, textual_cf: float, matched_symptoms?: array<int, array{symptom_code?: string|null}>}  $ranking  Kandidat yang dinilai.
+     * @param  array<int, array{disease: Disease, textual_cf: float}>  $allTextualRankings  Seluruh daftar peringkat (CertaintyFactorService::rankDiseases()) untuk menghitung margin.
+     */
+    public function textualCandidateIsReliable(array $ranking, array $allTextualRankings): bool
+    {
+        if (! $this->textualEvidenceHasSubstance($ranking)) {
+            return false;
+        }
+
+        /** @var Disease|null $disease */
+        $disease = $ranking['disease'] ?? null;
+        $cf = $this->clamp((float) ($ranking['textual_cf'] ?? 0.0));
+        $runnerUp = 0.0;
+
+        foreach ($allTextualRankings as $other) {
+            $otherDisease = $other['disease'] ?? null;
+
+            if (! $otherDisease instanceof Disease || ($disease instanceof Disease && $otherDisease->is($disease))) {
+                continue;
+            }
+
+            $runnerUp = max($runnerUp, $this->clamp((float) ($other['textual_cf'] ?? 0.0)));
+        }
+
+        return ($cf - $runnerUp) >= self::MIN_CF_MARGIN_FOR_CONFIDENT_LABEL;
+    }
+
+    /**
+     * Substansi bukti murni (keluasan + kelompok deskriptif), TANPA syarat
+     * margin - lihat catatan di textualCandidateIsReliable(). Dipakai oleh F11
+     * sendirian: kandidat dual-confirm tetap wajib punya beberapa gejala
+     * BERBEDA yang benar-benar menggambarkan ciri lesi (bukan cuma 1-2 gejala
+     * generik kontekstual), tapi tidak wajib unggul dari penyakit lain di
+     * ranking teks murni - itulah gunanya konfirmasi visual independen.
+     *
+     * @param  array{matched_symptoms?: array<int, array{symptom_code?: string|null}>}  $ranking
+     */
+    public function textualEvidenceHasSubstance(array $ranking): bool
+    {
+        $matchedSymptoms = $ranking['matched_symptoms'] ?? [];
+
+        if (count($matchedSymptoms) < self::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL) {
+            return false;
+        }
+
+        foreach ($matchedSymptoms as $match) {
+            if (in_array($this->symptomGroupPrefix((string) ($match['symptom_code'] ?? '')), self::DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Mengambil awalan kelompok pertanyaan dari kode gejala, mis. "P2" dari
+     * "P2_CINCIN". Kode gejala di luar bank pertanyaan 16-kelas (mis. dari
+     * fixture pengujian lama) mengembalikan string kosong, yang aman karena
+     * tidak akan pernah cocok dengan DESCRIPTIVE_SYMPTOM_GROUP_PREFIXES.
+     */
+    private function symptomGroupPrefix(string $symptomCode): string
+    {
+        return preg_match('/^(P\d+)_/', $symptomCode, $matches) === 1 ? $matches[1] : '';
+    }
+
+    /**
      * @param  Disease  $textualDisease  Pt: kandidat teks berkeyakinan tertinggi.
      * @param  float  $textualCf  CFt: nilai Certainty Factor kandidat teks tersebut.
      * @param  Disease|null  $visualDisease  Pv: kandidat visual teratas, null jika tidak ada (F06).
@@ -438,6 +558,19 @@ class FusionDecisionService
             $textualCf = $this->clamp((float) ($ranking['textual_cf'] ?? 0.0));
 
             if (! $disease instanceof Disease || $textualCf < self::HIGH_CF) {
+                continue;
+            }
+
+            // F11 tetap wajib pakai bukti teks yang bersubstansi (keluasan +
+            // kelompok deskriptif) - dual-confirm bukan jalan pintas meloloskan
+            // kandidat yang cuma didukung 1-2 gejala generik hanya karena
+            // visual kebetulan juga menunjuk ke sana. TAPI sengaja tidak pakai
+            // syarat margin penuh (textualCandidateIsReliable()): kandidat
+            // dual-confirm boleh saja kalah CF dari penyakit lain yang murni
+            // unggul di teks (gejala tumpang tindih banyak penyakit) - itulah
+            // gunanya konfirmasi visual independen, bukan keunggulan margin
+            // di dalam teks itu sendiri.
+            if (! $this->textualEvidenceHasSubstance($ranking)) {
                 continue;
             }
 

@@ -197,10 +197,14 @@ class ConsultationFlowTest extends TestCase
 
         $this->assertSame($psoriasis->id, $finalResult->disease_id);
         // P3_TEBAL + P2_PLAK give Psoriasis textual_cf 0.96, and the visual
-        // score is 0.78 - both clear the "high" bar, so F11 (dual-confirmed
-        // across both modalities) now fires ahead of F09 (visual + text-hint
-        // only). Stronger evidence, same safe outcome: no OTC medicine.
-        $this->assertSame('F11', $finalResult->fusion_rule_code);
+        // score is 0.78 - both clear the "high" bar. F11 used to fire here,
+        // but only 2 distinct symptoms matched - below
+        // FusionDecisionService::MIN_MATCHED_SYMPTOMS_FOR_CONFIDENT_LABEL (3),
+        // the same substance gate F11 now shares with F06 (added after the
+        // bisul/BCC/Keloid regressions). So it correctly falls to F09
+        // (context-aligned visual) instead - same safe outcome either way:
+        // no OTC medicine, still educate_only.
+        $this->assertSame('F09', $finalResult->fusion_rule_code);
         $this->assertSame('educate_only', $finalResult->action);
         $this->assertSame([], $finalResult->recommendations_snapshot);
     }
@@ -965,6 +969,67 @@ class ConsultationFlowTest extends TestCase
         $this->assertSame($keloid->id, $finalResult->disease_id);
         $this->assertTrue($finalResult->label_suppressed);
         $this->assertStringNotContainsString('Keloid', $finalResult->explanation);
+    }
+
+    /**
+     * Fase 1 (margin untuk F08): kandidat visual di luar 16 penyakit (tanpa
+     * basis CF) tidak boleh memaksakan namanya lewat F08 kalau cuma unggul
+     * tipis dari kandidat visual lain - model yang skornya menyebar rata ke
+     * beberapa kandidat (0,65 vs 0,55, selisih 0,10 < ambang 0,15) berarti
+     * tidak benar-benar yakin, sejalan dengan gerbang margin di sisi teks.
+     */
+    public function test_visual_only_finding_does_not_override_when_visual_margin_is_too_thin(): void
+    {
+        Storage::fake('public');
+        $this->seed(DatabaseSeeder::class);
+        $outOfScopeGroup = $this->createOutOfScopeGroupDisease();
+        $tineaCorporis = Disease::query()->where('code', 'TINEA_CORPORIS')->firstOrFail();
+
+        $this->mock(AiVisualService::class, function ($mock) use ($outOfScopeGroup, $tineaCorporis): void {
+            $mock->shouldReceive('analyze')
+                ->once()
+                ->andReturn([
+                    'provider' => 'dermacerdas_ai',
+                    'provider_status' => 'ok',
+                    'is_valid_skin_image' => true,
+                    'validation_status' => 'valid',
+                    'candidates' => [
+                        [
+                            'disease' => $outOfScopeGroup,
+                            'provider' => 'dermacerdas_ai',
+                            'visual_score' => 0.65,
+                            'visual_reason' => 'Menyerupai lesi virus jinak.',
+                            'raw_response' => [],
+                        ],
+                        [
+                            'disease' => $tineaCorporis,
+                            'provider' => 'dermacerdas_ai',
+                            'visual_score' => 0.55,
+                            'visual_reason' => 'Tapi juga bisa jadi kurap.',
+                            'raw_response' => [],
+                        ],
+                    ],
+                    'suggested_symptom_codes' => [],
+                    'warnings' => [],
+                    'raw_response' => [],
+                ]);
+        });
+
+        $this->post(route('consultation.store'), [
+            'visitor_name' => 'Pengguna Margin Visual Tipis',
+            'complaint_text' => 'Ada bercak kulit yang tidak biasa, tidak yakin apa penyebabnya.',
+            'consent' => '1',
+            'image' => UploadedFile::fake()->image('skin.png', 320, 320),
+            'symptoms' => $this->symptoms([]),
+            'red_flags' => $this->redFlags([]),
+        ])->assertRedirect();
+
+        $finalResult = ConsultationFinalResult::query()->firstOrFail();
+
+        // Margin tipis (0,10 < 0,15) berarti F08 tidak boleh menang - kalau
+        // ini gagal, disease_id akan sama dengan $outOfScopeGroup->id.
+        $this->assertNotSame('F08', $finalResult->fusion_rule_code);
+        $this->assertNotSame($outOfScopeGroup->id, $finalResult->disease_id);
     }
 
     /**

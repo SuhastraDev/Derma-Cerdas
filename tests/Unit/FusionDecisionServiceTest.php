@@ -357,9 +357,23 @@ class FusionDecisionServiceTest extends TestCase
         $tineaCorporis = $this->createDisease('TINEA_CORPORIS');
         $candidiasis = $this->createDisease('CANDIDIASIS');
 
+        // matched_symptoms mencerminkan bukti sungguhan sesi produksi itu (7
+        // gejala) supaya lolos gerbang keyakinan (textualCandidateIsReliable) -
+        // tanpa ini, fixture ringkas tanpa matched_symptoms akan ditolak
+        // gerbang keluasan/kelompok deskriptif yang sekarang juga berlaku
+        // untuk F11, bukan cuma F06.
+        $matchedSymptoms = [
+            ['symptom_code' => 'P1_BADAN'],
+            ['symptom_code' => 'P2_CINCIN'],
+            ['symptom_code' => 'P3_HALUS'],
+            ['symptom_code' => 'P4_GATAL'],
+            ['symptom_code' => 'P5_MINGGU'],
+            ['symptom_code' => 'P7_KERINGAT'],
+            ['symptom_code' => 'P8_TENGAHBERSIH'],
+        ];
         $textualRankings = [
             ['disease' => $candidiasis, 'textual_cf' => 0.9977],
-            ['disease' => $tineaCorporis, 'textual_cf' => 0.76],
+            ['disease' => $tineaCorporis, 'textual_cf' => 0.76, 'matched_symptoms' => $matchedSymptoms],
         ];
         $visualCandidates = [
             ['disease' => $tineaCorporis, 'visual_score' => 0.92],
@@ -390,6 +404,32 @@ class FusionDecisionServiceTest extends TestCase
         ];
         $visualCandidates = [
             ['disease' => $strongVisualOnly, 'visual_score' => 0.90],
+        ];
+
+        $dual = (new FusionDecisionService)->findDualConfirmedCandidate($textualRankings, $visualCandidates);
+
+        $this->assertNull($dual);
+    }
+
+    /**
+     * F11 tetap wajib substansi bukti teks (keluasan + kelompok deskriptif) -
+     * bukan jalan pintas untuk kandidat yang cuma didukung 1 gejala generik
+     * hanya karena visual kebetulan yakin ke penyakit yang sama. Ini tepat
+     * skenario yang membuat bisul disebut "Karsinoma sel basal" andai fotonya
+     * kebetulan mirip BCC juga: CF teks tinggi dari 1 gejala + visual tinggi
+     * TIDAK cukup lagi untuk F11.
+     */
+    public function test_f11_rejects_candidate_with_thin_textual_evidence_despite_high_visual_score(): void
+    {
+        $disease = $this->createDisease('BASAL_CELL_CARCINOMA');
+
+        $textualRankings = [
+            ['disease' => $disease, 'textual_cf' => 0.80, 'matched_symptoms' => [
+                ['symptom_code' => 'P2_BENJOLAN'],
+            ]],
+        ];
+        $visualCandidates = [
+            ['disease' => $disease, 'visual_score' => 0.85],
         ];
 
         $dual = (new FusionDecisionService)->findDualConfirmedCandidate($textualRankings, $visualCandidates);
