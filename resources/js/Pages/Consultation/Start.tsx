@@ -821,8 +821,8 @@ export default function Start({ symptoms, redFlags }: StartProps) {
                                 </article>
                             )}
                             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                                Pilih satu jawaban yang paling menggambarkan keluhan Anda. Bila ragu, pilih
-                                <span className="font-semibold"> Tidak yakin</span> &mdash; jawaban asal justru membuat hasil meleset.
+                                Pilih satu jawaban yang paling menggambarkan keluhan Anda. Bila ragu, atau kalau Anda yakin dengan keluhannya tapi tidak ada pilihan yang benar-benar cocok, pilih
+                                <span className="font-semibold"> Tidak yakin / tidak ada yang cocok</span> &mdash; jangan memaksa pilih yang paling mendekati, karena jawaban asal justru membuat hasil meleset.
                             </div>
                             {errors.symptoms && <ErrorText>{errors.symptoms}</ErrorText>}
                         </section>

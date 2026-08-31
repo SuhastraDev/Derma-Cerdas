@@ -91,7 +91,7 @@ class QuestionBank
                     'P1_WAJAH' => ['Wajah atau leher', 'Termasuk dahi, pipi, hidung, dan sekitar mulut'],
                     'P1_BADAN' => ['Badan, punggung, atau lengan', 'Area tubuh yang luas dan tertutup pakaian'],
                     'P1_KONTAK' => ['Hanya di tempat yang bersentuhan sesuatu', 'Misalnya bekas jam tangan, ikat pinggang, atau area yang terkena kosmetik'],
-                    'P1_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu — jawaban asal justru menyesatkan'],
+                    'P1_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau Anda yakin dengan lokasinya tapi tidak ada pilihan di atas yang pas — jawaban asal justru menyesatkan'],
                 ],
             ],
             'P2_BENTUK' => [
@@ -109,7 +109,7 @@ class QuestionBank
                     'P2_KERAK' => ['Luka berkerak kuning', 'Seperti madu yang mengering di atas luka'],
                     'P2_MERAHLUAS' => ['Merah luas tanpa batas jelas', 'Kemerahan menyebar dan tepinya sulit ditentukan'],
                     'P2_KUKUBERUBAH' => ['Bukan ruam, tapi kuku yang berubah', 'Kuku menebal, rapuh, atau berubah warna, tanpa ruam pada kulit di sekitarnya'],
-                    'P2_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P2_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau Anda yakin dengan bentuknya tapi tidak ada pilihan di atas yang pas — jangan paksa pilih yang paling mendekati'],
                 ],
             ],
             'P3_SISIK' => [
@@ -121,7 +121,7 @@ class QuestionBank
                     'P3_HALUS' => ['Halus seperti bedak', 'Sisik tipis yang baru terlihat jelas saat digaruk pelan'],
                     'P3_TEBAL' => ['Tebal, putih keperakan', 'Mengelupas berlapis seperti serpihan lilin'],
                     'P3_KERING' => ['Kering dan pecah-pecah', 'Kulit terasa kaku, retak, kadang perih'],
-                    'P3_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P3_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau tidak ada pilihan di atas yang menggambarkan permukaannya dengan tepat'],
                 ],
             ],
             'P4_RASA' => [
@@ -133,7 +133,7 @@ class QuestionBank
                     'P4_NYERI' => ['Nyeri atau panas menusuk', 'Kadang sudah terasa sebelum ruamnya muncul'],
                     'P4_PERIH' => ['Perih atau terbakar', 'Terutama saat terkena air atau keringat'],
                     'P4_TIDAKTERASA' => ['Tidak gatal dan tidak nyeri', 'Hanya terlihat, tanpa keluhan rasa'],
-                    'P4_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P4_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau rasanya tidak digambarkan tepat oleh pilihan di atas'],
                 ],
             ],
             'P5_WAKTU' => [
@@ -146,7 +146,7 @@ class QuestionBank
                     'P5_MINGGU' => ['Beberapa minggu, meluas perlahan', 'Bertambah sedikit demi sedikit'],
                     'P5_BULAN' => ['Berbulan-bulan, tidak sembuh, kadang berdarah', 'Menetap dan tidak membaik dengan obat apa pun'],
                     'P5_TAHUN' => ['Bertahun-tahun, kambuh-kambuhan', 'Hilang lalu muncul lagi di tempat yang sama'],
-                    'P5_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P5_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau perjalanannya tidak digambarkan tepat oleh pilihan di atas'],
                 ],
             ],
             'P6_SEBARAN' => [
@@ -158,7 +158,7 @@ class QuestionBank
                     'P6_SIMETRIS' => ['Muncul di kedua sisi tubuh', 'Misalnya kedua siku atau kedua lengan'],
                     'P6_SETEMPAT' => ['Hanya di satu tempat saja', 'Tidak ada di bagian tubuh lain'],
                     'P6_TERSEBAR' => ['Beberapa titik terpisah, tidak beraturan', 'Muncul di titik-titik berbeda yang tidak simetris, bisa juga berpindah-pindah'],
-                    'P6_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P6_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau sebarannya tidak digambarkan tepat oleh pilihan di atas'],
                 ],
             ],
             'P7_PEMICU' => [
@@ -171,7 +171,7 @@ class QuestionBank
                     'P7_BEKASLUKA' => ['Muncul di bekas luka, tindikan, atau operasi', 'Tumbuh pada tempat kulit pernah terluka, termasuk bekas jerawat'],
                     'P7_OBAT' => ['Setelah minum obat baru', 'Muncul dalam beberapa hari setelah mulai obat'],
                     'P7_TIDAKADA' => ['Tidak ada pemicu yang jelas', 'Muncul begitu saja'],
-                    'P7_TIDAKYAKIN' => ['Tidak yakin', 'Lewati bila ragu'],
+                    'P7_TIDAKYAKIN' => ['Tidak yakin / tidak ada yang cocok', 'Pilih ini juga kalau tidak ada pemicu yang digambarkan tepat oleh pilihan di atas'],
                 ],
             ],
             'P9_USIA' => [
