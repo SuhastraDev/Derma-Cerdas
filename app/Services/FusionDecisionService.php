@@ -5,11 +5,21 @@ namespace App\Services;
 use App\Models\Disease;
 
 /**
- * Rule-Based Decision-Level Fusion (Tabel 3.13, Subbab 3.2.3.5 naskah skripsi).
+ * Rule-Based Decision-Level Fusion (Tabel 3.12, Subbab 3.2.3 bagian e naskah skripsi).
  *
  * Menggabungkan kandidat penyakit hasil analisis visual (Pv) dengan kandidat
  * penyakit berkeyakinan tertinggi hasil Forward Chaining + Certainty Factor
- * (Pt, CFt) melalui aturan F01-F07, bukan rata-rata berbobot (weighted fusion).
+ * (Pt, CFt) melalui aturan, bukan rata-rata berbobot (weighted fusion).
+ *
+ * PENTING - urutan pemeriksaan aturan TIDAK berada di kelas ini. Kelas ini
+ * hanya menyediakan keputusan tiap aturan; rantai yang menentukan aturan mana
+ * yang menang ada di ConsultationWorkflowService::storeFinalResult(), dengan
+ * urutan F11 -> F09 -> F08 -> decide() (yang berisi F07, F13, lalu F01-F06).
+ * Membaca kelas ini sendirian akan memberi gambaran yang keliru.
+ *
+ * Aturan yang berlaku: F01-F09, F11, dan F13. F10 (decideContextSymptomAligned)
+ * masih ada di kelas ini tetapi tidak pernah dipanggil dari alur konsultasi,
+ * dan F12 tidak pernah diimplementasikan - karena itu penomorannya melompat.
  */
 class FusionDecisionService
 {
@@ -261,7 +271,7 @@ class FusionDecisionService
             return ['F07', 'refer'];
         }
 
-        // F13 (perluasan di luar Tabel 3.13): pengguna sendiri menjawab
+        // F13 (perluasan di luar Tabel 3.12): pengguna sendiri menjawab
         // "Tidak yakin/tidak ada yang cocok" untuk mayoritas gejala
         // deskriptif - lihat ConsultationWorkflowService::
         // symptomsIndicateOutOfScope(). Diperiksa SEBELUM F01-F06 karena
@@ -350,7 +360,7 @@ class FusionDecisionService
             }
 
             return sprintf(
-                'Aturan F13 (perluasan di luar Tabel 3.13): jawaban Anda menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (dipilih "Tidak yakin / tidak ada yang cocok" untuk separuh atau lebih ciri lesi yang ditanyakan) - kemungkinan kondisi ini di luar cakupan sistem. Disarankan periksa langsung ke tenaga kesehatan untuk kepastian, bukan berdasarkan satu nama penyakit tertentu dari kandidat teratas (CF %s).',
+                'Aturan F13: jawaban Anda menunjukkan gejala tidak cocok dengan pola-pola pada 16 kondisi yang dikenali sistem (dipilih "Tidak yakin / tidak ada yang cocok" untuk separuh atau lebih ciri lesi yang ditanyakan) - kemungkinan kondisi ini di luar cakupan sistem. Disarankan periksa langsung ke tenaga kesehatan untuk kepastian, bukan berdasarkan satu nama penyakit tertentu dari kandidat teratas (CF %s).',
                 $cfPercent
             );
         }
@@ -513,12 +523,12 @@ class FusionDecisionService
     }
 
     /**
-     * F11 (perluasan di luar Tabel 3.13): mencari kandidat yang didukung KUAT
+     * F11 (perluasan di luar Tabel 3.12): mencari kandidat yang didukung KUAT
      * oleh gejala DAN visual sekaligus, dengan menoleh ke seluruh daftar
      * kandidat kedua modalitas - bukan hanya juara #1 masing-masing sisi
      * seperti F01-F05.
      *
-     * Tabel 3.13 hanya membandingkan identitas Pv vs Pt. Ini bisa membuat
+     * Tabel 3.12 hanya membandingkan identitas Pv vs Pt. Ini bisa membuat
      * penyakit yang sebenarnya didukung kuat oleh foto DAN gejala kalah start
      * dari penyakit lain yang CF gejalanya kebetulan lebih tinggi tapi nol
      * dukungan visual. Kasus produksi nyata: foto Tinea Corporis (kurap) skor
@@ -620,7 +630,7 @@ class FusionDecisionService
                 'recommend_otc_unsupported',
             ], true),
             'explanation' => sprintf(
-                'Aturan F11 (perluasan di luar Tabel 3.13): %s didukung kuat oleh gejala (CF %s) DAN analisis visual (skor %s) sekaligus, dikonfirmasi silang dari seluruh daftar kandidat kedua modalitas - bukan hanya kandidat teratas masing-masing sisi.',
+                'Aturan F11: %s didukung kuat oleh gejala (CF %s) DAN analisis visual (skor %s) sekaligus, dikonfirmasi silang dari seluruh daftar kandidat kedua modalitas - bukan hanya kandidat teratas masing-masing sisi.',
                 $disease->name_indonesian ?: $disease->name,
                 sprintf('%.1f%%', $textualCf * 100),
                 sprintf('%.1f%%', $visualScore * 100)

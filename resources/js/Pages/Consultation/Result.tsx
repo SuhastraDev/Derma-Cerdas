@@ -267,7 +267,7 @@ function actionCopy(action: string | null): {
         return {
             title: 'Hasil belum cukup meyakinkan',
             eyebrow: 'Perlu data lebih baik',
-            body: 'Skor gabungan belum mencapai threshold. Perbaiki foto, lengkapi gejala, atau konsultasi langsung bila keluhan mengganggu.',
+            body: 'Keyakinan dari jawaban gejala belum mencapai ambang. Perbaiki foto, lengkapi gejala, atau konsultasi langsung bila keluhan mengganggu.',
             severity: 'unclear',
             Icon: AlertTriangle,
         };
@@ -453,7 +453,12 @@ export default function Result({
                         <div className="mt-6 flex flex-wrap gap-x-8 gap-y-4 border-t border-white/10 pt-5">
                             <StatPill label="Gejala CF" value={finalResult.textual_cf} barClass={style.bar} />
                             <StatPill label="Visual" value={finalResult.visual_score} barClass={style.bar} />
-                            <StatPill label="Gabungan" value={finalResult.fusion_score} barClass={style.bar} />
+                            {/* fusion_score BUKAN gabungan aritmetika kedua nilai di kirinya: ia
+                                disalin dari modalitas yang menentukan keputusan menurut aturan
+                                fusi yang berlaku (F01-F07/F11 dari CF gejala, F08/F09 dari skor
+                                visual). Label lama "Gabungan" menyesatkan - lihat
+                                FusionDecisionService::decide(). */}
+                            <StatPill label="Keputusan" value={finalResult.fusion_score} barClass={style.bar} />
                         </div>
                     )}
                 </section>
